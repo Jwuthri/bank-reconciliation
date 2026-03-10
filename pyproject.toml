@@ -1,0 +1,51 @@
+[project]
+name = "bank-reconciliation"
+version = "0.1.0"
+description = "Bank transaction reconciliation system"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0.0",
+    "peewee>=3.17.0",
+    "structlog>=24.1.0",
+    "humanize>=4.0.0",
+    "rich>=13.0.0",
+    "fastapi",
+    "jinja2",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "poethepoet>=0.24.0",
+    "ruff>=0.8.0",
+    "python-dotenv>=1.0.0",
+    "psycopg2-binary>=2.9.0",
+]
+
+[tool.poe.tasks]
+test = "pytest tests/ -v"
+dashboard = "uvicorn bank_reconciliation.dashboard:app --reload"
+cli = "python -m bank_reconciliation.cli"
+"db:build" = "python -m internal.scripts.build_local_dbs"
+bundle = "python -m internal.scripts.build_candidate_zip"
+lint = "ruff check ."
+"lint:fix" = "ruff check --fix ."
+format = "ruff format ."
+format-check = "ruff format --check ."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F"]
+extend-select = ["I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

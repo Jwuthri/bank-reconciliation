@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lassie Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fafafa; color: #1f2937; display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* Header */
+    .header { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 24px; }
+    .header h1 { color: #2a643b; font-size: 18px; font-weight: 700; }
+
+    /* Layout */
+    .layout { display: flex; flex: 1; }
+
+    /* Sidebar */
+    .sidebar { width: 180px; background: #fff; border-right: 1px solid #e5e7eb; padding: 8px 0; flex-shrink: 0; }
+    .sidebar a { display: block; padding: 10px 20px; text-decoration: none; color: #374151; font-weight: 600; font-size: 14px; }
+    .sidebar a:hover { background: #f3f4f6; }
+    .sidebar a.active { background: #e5f1e8; color: #2a643b; }
+
+    /* Content */
+    .content { flex: 1; padding: 24px; }
+    .section-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .section-subtitle { color: #64748b; font-size: 13px; margin-bottom: 16px; line-height: 1.4; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
+    .tabs a { padding: 8px 16px; text-decoration: none; font-size: 13px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent; }
+    .tabs a:hover { color: #374151; background: #f3f4f6; }
+    .tabs a.active { color: #fff; background: #2a643b; border-bottom-color: #2a643b; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+    th { background: #f9fafb; color: #374151; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+    tr:hover td { background: #f4f9f5; }
+
+    /* Status dots */
+    .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+    .status-dot.received { background: #22c55e; }
+    .status-dot.awaiting { background: #ef4444; }
+
+    /* Pagination */
+    .pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; font-size: 13px; color: #6b7280; }
+    .pagination .info { }
+    .pagination .nav { display: flex; gap: 8px; }
+    .pagination a { padding: 6px 14px; border: 1px solid #e5e7eb; border-radius: 4px; text-decoration: none; color: #374151; font-weight: 500; font-size: 13px; }
+    .pagination a:hover { background: #f3f4f6; }
+    .pagination a.disabled { pointer-events: none; opacity: 0.4; }
+  </style>
+</head>
+<body>
+
+<div class="header"><h1>Lassie Dashboard</h1></div>
+
+<div class="layout">
+  <nav class="sidebar">
+    <a href="/?section=inbox&tab=missing_eobs&page=0&page_size={{ page_size }}" class="{{ 'active' if section == 'inbox' else '' }}">Inbox</a>
+    <a href="/?section=payments&page=0&page_size={{ page_size }}" class="{{ 'active' if section == 'payments' else '' }}">Payments</a>
+  </nav>
+
+  <main class="content">
+    {% if section == "inbox" %}
+      <div class="section-title">One place for all your follow-ups</div>
+      <div class="section-subtitle">Welcome to your inbox. Here you can find all your follow-ups in one convenient place.</div>
+
+      <div class="tabs">
+        <a href="/?section=inbox&tab=missing_eobs&page=0&page_size={{ page_size }}" class="{{ 'active' if tab == 'missing_eobs' else '' }}">Missing EOBs</a>
+        <a href="/?section=inbox&tab=missing_txn&page=0&page_size={{ page_size }}" class="{{ 'active' if tab == 'missing_txn' else '' }}">Missing Transaction</a>
+      </div>
+
+      {% if view == "missing_eobs" %}
+      <table>
+        <thead>
+          <tr><th>Txn ID</th><th>Payment Number</th><th>Payer</th><th>Amount</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+          {% for task in result.items %}
+          <tr>
+            <td>{{ task.transaction_id }}</td>
+            <td>{{ task.payment_number or "N/A" }}</td>
+            <td>{{ task.payer_name or "N/A" }}</td>
+            <td>{{ task.amount | format_currency }}</td>
+            <td>{{ task.received_at | format_date }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% elif view == "missing_txn" %}
+      <table>
+        <thead>
+          <tr><th>EOB ID</th><th>Payment #</th><th>Payer</th><th>Amount</th><th>Type</th></tr>
+        </thead>
+        <tbody>
+          {% for task in result.items %}
+          <tr>
+            <td>{{ task.eob_id }}</td>
+            <td>{{ task.payment_number }}</td>
+            <td>{{ task.payer_name }}</td>
+            <td>{{ task.adjusted_amount | format_currency }}</td>
+            <td>{{ task.payment_type }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+    {% elif section == "payments" %}
+      <div class="section-title">Reconcile your payments</div>
+      <div class="section-subtitle">Keep track of insurance deposits and reconcile your EOBs against your bank account.</div>
+
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Payer</th><th>Payment #</th><th>Amount</th><th>Txn</th><th>EOB</th></tr>
+        </thead>
+        <tbody>
+          {% for payment in result.items %}
+          <tr>
+            <td>{{ payment.date | format_date }}</td>
+            <td>{{ payment.payer_name or "N/A" }}</td>
+            <td>{{ payment.payment_number or "N/A" }}</td>
+            <td>{{ payment.adjusted_amount | format_currency }}</td>
+            <td><span class="status-dot {{ payment.bank_transaction_status | lower }}"></span></td>
+            <td><span class="status-dot {{ payment.eob_status | lower }}"></span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+
+    {% if result.total_count > 0 %}
+    <div class="pagination">
+      <span class="info">Page {{ result.page + 1 }} of {{ result.total_pages }} &middot; Showing {{ start_idx }}&ndash;{{ end_idx }} of {{ result.total_count }}</span>
+      <span class="nav">
+        <a href="/?section={{ section }}&tab={{ tab }}&page={{ page - 1 }}&page_size={{ page_size }}" class="{{ 'disabled' if not result.has_prev else '' }}">&larr; Prev</a>
+        <a href="/?section={{ section }}&tab={{ tab }}&page={{ page + 1 }}&page_size={{ page_size }}" class="{{ 'disabled' if not result.has_next else '' }}">Next &rarr;</a>
+      </span>
+    </div>
+    {% endif %}
+
+  </main>
+</div>
+
+</body>
+</html>
