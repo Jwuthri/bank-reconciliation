@@ -6,7 +6,10 @@ from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 
-from .reconciliation import LiveReconciliationEngine, ReconciliationEngine
+from .db.database import db
+from .db.init_db import init_db
+from .reconciliation import ReconciliationEngine
+from .reconciliation.engine import LiveReconciliationEngine
 
 
 def format_currency(cents: int | None) -> str:
@@ -157,15 +160,21 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    engine = LiveReconciliationEngine()
+    db.connect(reuse_if_open=True)
+    try:
+        init_db()
+        engine = LiveReconciliationEngine()
+        engine.run_matching()
 
-    # Route to handler
-    if args.command == "list:payments":
-        list_payments(engine, args.page, args.page_size)
-    elif args.command == "list:missing-transactions":
-        list_missing_transactions(engine, args.page, args.page_size)
-    elif args.command == "list:missing-payment-eob":
-        list_missing_payment_eobs(engine, args.page, args.page_size)
+        if args.command == "list:payments":
+            list_payments(engine, args.page, args.page_size)
+        elif args.command == "list:missing-transactions":
+            list_missing_transactions(engine, args.page, args.page_size)
+        elif args.command == "list:missing-payment-eob":
+            list_missing_payment_eobs(engine, args.page, args.page_size)
+    finally:
+        if not db.is_closed():
+            db.close()
 
 
 if __name__ == "__main__":

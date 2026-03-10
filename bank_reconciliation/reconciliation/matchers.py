@@ -86,6 +86,13 @@ class PaymentNumberMatcher:
         self._eob_by_payment_number: dict[str, EOBLike] = {}
         for eob in eobs:
             if eob.payment_number:
+                if eob.payment_number in self._eob_by_payment_number:
+                    logger.warning(
+                        "Duplicate payment_number %r: EOB %d overwrites EOB %d",
+                        eob.payment_number,
+                        eob.id,
+                        self._eob_by_payment_number[eob.payment_number].id,
+                    )
                 self._eob_by_payment_number[eob.payment_number] = eob
 
     def match(
@@ -154,19 +161,15 @@ def build_payer_note_map_from_db(payers: Sequence[object]) -> dict[int, str]:
     _KNOWN: dict[str, str] = {
         "MetLife": "MetLife",
         "Guardian": "Guardian Life",
-        "Delta Dental": "Delta",
-        "Delta Dental of California": "CALIFORNIA DENTA",
+        "Delta Dental": "CALIFORNIA DENTA",
         "California Dental": "CALIFORNIA DENTA",
-        "Cigna": "Cigna",
-        "Aetna": "Aetna",
-        "UnitedHealthcare": "UHC",
-        "Anthem Blue Cross Blue Shield": "Anthem",
     }
     result: dict[int, str] = {}
     for p in payers:
-        pattern = _KNOWN.get(p.name)  # type: ignore[union-attr]
-        if pattern:
-            result[p.id] = pattern  # type: ignore[union-attr]
+        for name_prefix, pattern in _KNOWN.items():
+            if p.name.startswith(name_prefix):  # type: ignore[union-attr]
+                result[p.id] = pattern  # type: ignore[union-attr]
+                break
     return result
 
 

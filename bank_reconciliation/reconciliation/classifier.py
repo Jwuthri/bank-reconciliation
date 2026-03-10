@@ -82,6 +82,13 @@ RULES: list[_Rule] = [
     _noise(r"\bDMV\b", "dmv"),
     _noise(r"CARD PROCESSING", "card_processing"),
     _noise(r"VENDOR.*SALE", "vendor_sale"),
+    _noise(r"BKCD PROCESSING", "bkcd_processing"),
+    _noise(r"RETURNED DEPOSIT", "returned_deposit"),
+    _noise(r"CHECK \d+", "check_written"),
+    _noise(r"Bill\.com", "billcom"),
+    _noise(r"Cherry", "cherry_funding"),
+    _noise(r"Outgoing Wire Fee", "wire_fee"),
+    _noise(r"REMOTE DEPOSIT", "remote_deposit"),
 ]
 
 

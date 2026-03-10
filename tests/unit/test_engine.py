@@ -125,8 +125,6 @@ class TestRunMatching:
     def test_classifies_and_matches_payer_amount_date(self):
         """Full pipeline: classify + payer amount date match."""
         payer = _payer("MetLife")
-        payer.id = 3  # DEFAULT_PAYER_NOTE_MAP expects payer_id=3 for MetLife
-        payer.save()
         eob = _eob(payer, adjusted_amount=24120, day=5)
         bt = _bt(amount=-24120, note="MetLife", day=7)
 

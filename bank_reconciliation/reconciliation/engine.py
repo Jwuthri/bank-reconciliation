@@ -24,6 +24,7 @@ from bank_reconciliation.reconciliation.classifier import classify_all
 from bank_reconciliation.reconciliation.matchers import (
     PayerAmountDateMatcher,
     PaymentNumberMatcher,
+    build_payer_note_map_from_db,
     extract_trn_payment_number,
 )
 
@@ -127,8 +128,9 @@ class LiveReconciliationEngine(ReconciliationEngine):
             already_matched_txn_ids.add(mr.bank_transaction_id)
 
         # Matcher 2: payer + amount + date
+        payer_note_map = build_payer_note_map_from_db(list(Payer.select()))
         pad_matcher = PayerAmountDateMatcher(
-            eobs, payer_note_map=None, date_window_days=5
+            eobs, payer_note_map=payer_note_map, date_window_days=5
         )
         pad_results = pad_matcher.match(
             insurance_txns,

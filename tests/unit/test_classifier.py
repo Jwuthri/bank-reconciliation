@@ -178,15 +178,10 @@ class TestEdgeCases:
         "note",
         [
             "DEPOSIT",
-            "REMOTE DEPOSIT CAPTURE",
-            "CHECK 5129",
-            "Cherry Funding 2267716",
             "DELTA DENTAL MA PAYMENT 5803916",
             "RONSMEDICALGASES PURCHASE JOHN DOE PE",
             "DCM DSO LLC ACCTVERIFY 026EYHFXQ1I57H3",
             "69199 JANE DOE ACCTVERIFY 14053751",
-            "BKCD PROCESSING SETTLEMENT 115660001089288",
-            "Remote Deposit Capture Refund - Multi",
         ],
     )
     def test_unknown_defaults_to_not_insurance(self, note: str):
@@ -279,7 +274,7 @@ class TestConfidence:
         assert result.confidence == 0.0
 
     def test_unknown_has_zero_confidence_various(self):
-        for note in ["CHECK 5129", "Cherry Funding 2267716", "REMOTE DEPOSIT CAPTURE"]:
+        for note in ["DEPOSIT", "RONSMEDICALGASES PURCHASE", "DCM DSO LLC ACCTVERIFY"]:
             result = classify_transaction(note)
             assert result.label == "unknown"
             assert result.confidence == 0.0

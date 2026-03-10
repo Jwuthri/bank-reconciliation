@@ -6,7 +6,10 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from humanize import intcomma, ordinal
 
-from .reconciliation import LiveReconciliationEngine, ReconciliationEngine
+from .db.database import db
+from .db.init_db import init_db
+from .reconciliation import ReconciliationEngine
+from .reconciliation.engine import LiveReconciliationEngine
 
 app = FastAPI(title="Lassie Dashboard")
 
@@ -14,6 +17,13 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 engine: ReconciliationEngine = LiveReconciliationEngine()
+
+
+@app.on_event("startup")
+def startup_event() -> None:
+    db.connect(reuse_if_open=True)
+    init_db()
+    engine.run_matching()
 
 
 def format_date(dt: datetime) -> str:
