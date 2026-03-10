@@ -3,6 +3,7 @@ from .models import (
     MissingEOBTask,
     MissingTransactionTask,
     PaginatedResult,
+    ReconciliationStats,
 )
 
 
@@ -16,7 +17,11 @@ class ReconciliationEngine:
         return {}
 
     def get_dashboard_payments(
-        self, page: int = 0, page_size: int = 20
+        self,
+        page: int = 0,
+        page_size: int = 20,
+        sort_by: str = "date",
+        sort_order: str = "desc",
     ) -> PaginatedResult[DashboardPayment]:
         """Return paginated join of EOBs and bank transactions for practice dashboard.
 
@@ -62,4 +67,27 @@ class ReconciliationEngine:
         Returns:
             PaginatedResult containing page items and metadata
         """
+        raise NotImplementedError
+
+    def manual_reconcile(self, eob_id: int, transaction_id: int) -> int:
+        """Create a manual match between an EOB and a bank transaction.
+
+        Returns the created ReconciliationMatch id.
+        Raises ValueError if IDs are invalid or already matched.
+        """
+        raise NotImplementedError
+
+    def dismiss_item(
+        self, *, eob_id: int | None = None, transaction_id: int | None = None
+    ) -> int:
+        """Mark an unmatched EOB or transaction as dismissed (not reconcilable).
+
+        Exactly one of eob_id or transaction_id must be provided.
+        Returns the created ReconciliationMatch id.
+        Raises ValueError if invalid.
+        """
+        raise NotImplementedError
+
+    def get_stats(self) -> ReconciliationStats:
+        """Return aggregate statistics for classification and reconciliation."""
         raise NotImplementedError

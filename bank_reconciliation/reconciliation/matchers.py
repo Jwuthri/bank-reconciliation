@@ -21,6 +21,11 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Protocol, Sequence
 
+from bank_reconciliation.reconciliation.normalize import (
+    normalize_note,
+    normalize_payment_number,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -35,7 +40,9 @@ def extract_trn_payment_number(note: str | None) -> str | None:
     if not note:
         return None
     m = _TRN_RE.search(note)
-    return m.group(1) if m else None
+    if not m:
+        return None
+    return normalize_payment_number(m.group(1))
 
 
 # ---------------------------------------------------------------------------
@@ -97,15 +104,16 @@ class PaymentNumberMatcher:
     def __init__(self, eobs: Sequence[EOBLike]) -> None:
         self._eob_by_payment_number: dict[str, EOBLike] = {}
         for eob in eobs:
-            if eob.payment_number:
-                if eob.payment_number in self._eob_by_payment_number:
+            key = normalize_payment_number(eob.payment_number)
+            if key:
+                if key in self._eob_by_payment_number:
                     logger.warning(
                         "Duplicate payment_number %r: EOB %d overwrites EOB %d",
-                        eob.payment_number,
+                        key,
                         eob.id,
-                        self._eob_by_payment_number[eob.payment_number].id,
+                        self._eob_by_payment_number[key].id,
                     )
-                self._eob_by_payment_number[eob.payment_number] = eob
+                self._eob_by_payment_number[key] = eob
 
     def match(
         self,
@@ -165,8 +173,9 @@ def build_payer_note_map_from_db(payers: Sequence[object]) -> dict[int, str]:
 
     result: dict[int, str] = {}
     for p in payers:
+        payer_name_lower = p.name.lower()  # type: ignore[union-attr]
         for name_prefix, pattern in PAYER_NAME_TO_NOTE_PATTERN.items():
-            if p.name.startswith(name_prefix):  # type: ignore[union-attr]
+            if payer_name_lower.startswith(name_prefix.lower()):
                 result[p.id] = pattern  # type: ignore[union-attr]
                 break
     return result
@@ -198,9 +207,10 @@ class PayerAmountDateMatcher:
 
     def _identify_payer(self, note: str | None) -> int | None:
         """Return the payer_id if the note matches a known payer pattern."""
-        if not note:
+        normalized = normalize_note(note)
+        if not normalized:
             return None
-        note_upper = note.upper()
+        note_upper = normalized.upper()
         for pattern, payer_id in self._note_to_payer:
             if pattern.upper() in note_upper:
                 return payer_id

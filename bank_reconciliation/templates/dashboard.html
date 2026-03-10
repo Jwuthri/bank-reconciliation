@@ -6,51 +6,377 @@
   <title>Lassie Dashboard</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fafafa; color: #1f2937; display: flex; flex-direction: column; min-height: 100vh; }
+    body {
+      font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #f8faf9 0%, #eef4f1 100%);
+      color: #1a2e28;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      line-height: 1.5;
+    }
 
     /* Header */
-    .header { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 24px; }
-    .header h1 { color: #2a643b; font-size: 18px; font-weight: 700; }
+    .header {
+      background: #fff;
+      border-bottom: 1px solid rgba(42, 100, 59, 0.12);
+      padding: 16px 28px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .header h1 {
+      color: #1d4d3a;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
 
     /* Layout */
     .layout { display: flex; flex: 1; }
 
     /* Sidebar */
-    .sidebar { width: 180px; background: #fff; border-right: 1px solid #e5e7eb; padding: 8px 0; flex-shrink: 0; }
-    .sidebar a { display: block; padding: 10px 20px; text-decoration: none; color: #374151; font-weight: 600; font-size: 14px; }
-    .sidebar a:hover { background: #f3f4f6; }
-    .sidebar a.active { background: #e5f1e8; color: #2a643b; }
+    .sidebar {
+      width: 200px;
+      background: #fff;
+      border-right: 1px solid rgba(42, 100, 59, 0.1);
+      padding: 20px 0;
+      flex-shrink: 0;
+      box-shadow: 2px 0 12px rgba(0,0,0,0.03);
+    }
+    .sidebar a {
+      display: block;
+      padding: 12px 24px;
+      text-decoration: none;
+      color: #4a5f57;
+      font-weight: 500;
+      font-size: 14px;
+      transition: all 0.15s ease;
+      border-left: 3px solid transparent;
+      margin: 2px 0;
+    }
+    .sidebar a:hover {
+      background: rgba(42, 100, 59, 0.06);
+      color: #1d4d3a;
+    }
+    .sidebar a.active {
+      background: rgba(42, 100, 59, 0.08);
+      color: #1d4d3a;
+      border-left-color: #2a643b;
+      font-weight: 600;
+    }
 
     /* Content */
-    .content { flex: 1; padding: 24px; }
-    .section-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
-    .section-subtitle { color: #64748b; font-size: 13px; margin-bottom: 16px; line-height: 1.4; }
+    .content { flex: 1; padding: 32px 40px; max-width: 1400px; }
+    .section-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a2e28;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+    .section-subtitle {
+      color: #5c6f67;
+      font-size: 14px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
 
     /* Tabs */
-    .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
-    .tabs a { padding: 8px 16px; text-decoration: none; font-size: 13px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent; }
-    .tabs a:hover { color: #374151; background: #f3f4f6; }
-    .tabs a.active { color: #fff; background: #2a643b; border-bottom-color: #2a643b; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      background: #fff;
+      padding: 4px;
+      border-radius: 10px;
+      width: fit-content;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .tabs a {
+      padding: 10px 20px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      color: #5c6f67;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+    }
+    .tabs a:hover { color: #1d4d3a; background: rgba(42, 100, 59, 0.06); }
+    .tabs a.active {
+      color: #fff;
+      background: linear-gradient(135deg, #2a643b 0%, #1e4a2a 100%);
+      box-shadow: 0 2px 6px rgba(42, 100, 59, 0.3);
+    }
 
     /* Table */
-    table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
-    th { background: #f9fafb; color: #374151; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
-    td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
-    tr:hover td { background: #f4f9f5; }
+    .table-wrapper {
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      border: 1px solid rgba(42, 100, 59, 0.08);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th {
+      background: linear-gradient(180deg, #f8faf9 0%, #f0f5f2 100%);
+      color: #3d5249;
+      font-weight: 600;
+      text-align: left;
+      padding: 14px 18px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid rgba(42, 100, 59, 0.1);
+    }
+    td {
+      padding: 14px 18px;
+      border-bottom: 1px solid #f0f4f2;
+      color: #2d4038;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(42, 100, 59, 0.04); }
+    tbody tr { transition: background 0.15s ease; }
 
-    /* Status dots */
-    .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-    .status-dot.received { background: #22c55e; }
-    .status-dot.awaiting { background: #ef4444; }
+    /* Status badges */
+    .status-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .status-dot.received {
+      background: rgba(34, 197, 94, 0.15);
+      color: #15803d;
+    }
+    .status-dot.awaiting {
+      background: rgba(239, 68, 68, 0.12);
+      color: #b91c1c;
+    }
+    .status-dot::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
 
     /* Pagination */
-    .pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; font-size: 13px; color: #6b7280; }
-    .pagination .info { }
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0;
+      font-size: 14px;
+      color: #5c6f67;
+    }
     .pagination .nav { display: flex; gap: 8px; }
-    .pagination a { padding: 6px 14px; border: 1px solid #e5e7eb; border-radius: 4px; text-decoration: none; color: #374151; font-weight: 500; font-size: 13px; }
-    .pagination a:hover { background: #f3f4f6; }
+    .pagination a {
+      padding: 8px 16px;
+      border: 1px solid rgba(42, 100, 59, 0.2);
+      border-radius: 8px;
+      text-decoration: none;
+      color: #2d4038;
+      font-weight: 500;
+      font-size: 13px;
+      transition: all 0.15s ease;
+    }
+    .pagination a:hover {
+      background: rgba(42, 100, 59, 0.08);
+      border-color: rgba(42, 100, 59, 0.3);
+    }
     .pagination a.disabled { pointer-events: none; opacity: 0.4; }
+
+    /* Stats / Overview */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+    .stats-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0, 0.06);
+      border: 1px solid rgba(42, 100, 59, 0.08);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .stats-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(0,0,0, 0.08);
+    }
+    .stats-card h3 {
+      font-size: 11px;
+      font-weight: 600;
+      color: #5c6f67;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .stats-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a2e28;
+      letter-spacing: -0.02em;
+    }
+    .bar-container {
+      height: 6px;
+      background: #e8efeb;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+    .bar-fill.insurance { background: linear-gradient(90deg, #22c55e, #16a34a); }
+    .bar-fill.not-insurance { background: linear-gradient(90deg, #64748b, #475569); }
+    .bar-fill.unknown { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .bar-fill.matched { background: linear-gradient(90deg, #22c55e, #16a34a); }
+    .bar-fill.unmatched { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+    .reconcile-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .reconcile-actions input {
+      width: 80px;
+      padding: 8px 10px;
+      font-size: 13px;
+      border: 1px solid rgba(42, 100, 59, 0.2);
+      border-radius: 8px;
+      transition: border-color 0.15s ease;
+    }
+    .reconcile-actions input:focus {
+      outline: none;
+      border-color: #2a643b;
+      box-shadow: 0 0 0 2px rgba(42, 100, 59, 0.15);
+    }
+    .reconcile-actions button {
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-link {
+      background: linear-gradient(135deg, #2a643b 0%, #1e4a2a 100%);
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(42, 100, 59, 0.25);
+    }
+    .btn-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(42, 100, 59, 0.3);
+    }
+    .btn-dismiss {
+      background: #f1f5f3;
+      color: #5c6f67;
+    }
+    .btn-dismiss:hover { background: #e2ebe6; color: #2d4038; }
+    .btn-run-pipeline {
+      background: linear-gradient(135deg, #2a643b 0%, #1e4a2a 100%);
+      color: #fff;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(42, 100, 59, 0.25);
+      transition: all 0.15s ease;
+    }
+    .btn-run-pipeline:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(42, 100, 59, 0.35);
+    }
+    .btn-run-pipeline:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .pipeline-status { margin-left: 14px; font-size: 14px; color: #5c6f67; }
+    .pipeline-status.running { color: #d97706; font-weight: 500; }
+    .pipeline-status.success { color: #15803d; font-weight: 500; }
+    .pipeline-status.error { color: #b91c1c; font-weight: 500; }
+    .row-error { color: #b91c1c; font-size: 12px; margin-top: 6px; }
+    .row-success { opacity: 0.6; }
+    .row-clickable { cursor: pointer; }
+    .row-clickable:hover td { background: rgba(42, 100, 59, 0.06) !important; }
+    .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .sortable-th a { color: inherit; text-decoration: none; display: inline-block; }
+    .sortable-th:hover a, .sortable-th.active a { color: #1d4d3a; }
+    .sortable-th .sort-icon { opacity: 0.5; font-size: 10px; margin-left: 4px; }
+    .sortable-th.active .sort-icon { opacity: 1; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 46, 40, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 16px;
+      max-width: 90vw;
+      max-height: 85vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+      border: 1px solid rgba(42, 100, 59, 0.1);
+    }
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid #e8efeb;
+      font-weight: 700;
+      font-size: 15px;
+      color: #1a2e28;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(180deg, #f8faf9 0%, #fff 100%);
+    }
+    .modal-close {
+      background: #f1f5f3;
+      border: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      font-size: 18px;
+      cursor: pointer;
+      color: #5c6f67;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .modal-close:hover { background: #e2ebe6; color: #1a2e28; }
+    .modal-body {
+      padding: 24px;
+      overflow: auto;
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre;
+      word-break: break-word;
+      background: #1a2e28;
+      color: #e8efeb;
+      border-radius: 0 0 16px 16px;
+    }
+    .modal-body .json-key { color: #7dd3fc; }
+    .modal-body .json-string { color: #86efac; }
+    .modal-body .json-number { color: #fcd34d; }
+    .modal-body .json-bool { color: #c4b5fd; }
+    .modal-body .json-null { color: #94a3b8; }
+    .modal-body .json-bracket { color: #64748b; }
   </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -58,12 +384,100 @@
 
 <div class="layout">
   <nav class="sidebar">
+    <a href="/?section=overview&page_size={{ page_size }}" class="{{ 'active' if section == 'overview' else '' }}">Overview</a>
     <a href="/?section=inbox&tab=missing_eobs&page=0&page_size={{ page_size }}" class="{{ 'active' if section == 'inbox' else '' }}">Inbox</a>
     <a href="/?section=payments&page=0&page_size={{ page_size }}" class="{{ 'active' if section == 'payments' else '' }}">Payments</a>
   </nav>
 
   <main class="content">
-    {% if section == "inbox" %}
+    {% if section == "overview" %}
+      <div class="section-title">Reconciliation Overview</div>
+      <div class="section-subtitle">Classification and reconciliation statistics at a glance.</div>
+
+      <div class="pipeline-actions" style="margin-bottom: 20px;">
+        <button type="button" id="run-pipeline-btn" class="btn-run-pipeline">Run pipeline</button>
+        <span id="pipeline-status" class="pipeline-status"></span>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stats-card">
+          <h3>Total Transactions</h3>
+          <div class="value">{{ stats.total_transactions | intcomma }}</div>
+        </div>
+        <div class="stats-card">
+          <h3>Insurance</h3>
+          <div class="value">{{ stats.insurance_count | intcomma }}</div>
+          <div class="bar-container">
+            <div class="bar-fill insurance" style="width: {{ (100 * stats.insurance_count / stats.total_transactions) if stats.total_transactions else 0 }}%"></div>
+          </div>
+        </div>
+        <div class="stats-card">
+          <h3>Not Insurance</h3>
+          <div class="value">{{ stats.not_insurance_count | intcomma }}</div>
+          <div class="bar-container">
+            <div class="bar-fill not-insurance" style="width: {{ (100 * stats.not_insurance_count / stats.total_transactions) if stats.total_transactions else 0 }}%"></div>
+          </div>
+        </div>
+        <div class="stats-card">
+          <h3>Unknown</h3>
+          <div class="value">{{ stats.unknown_count | intcomma }}</div>
+          <div class="bar-container">
+            <div class="bar-fill unknown" style="width: {{ (100 * stats.unknown_count / stats.total_transactions) if stats.total_transactions else 0 }}%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 24px;">Reconciliation</div>
+      <div class="stats-grid">
+        <div class="stats-card">
+          <h3>Total EOBs</h3>
+          <div class="value">{{ stats.total_eobs | intcomma }}</div>
+        </div>
+        <div class="stats-card">
+          <h3>Matched</h3>
+          <div class="value">{{ stats.matched_count | intcomma }}</div>
+          <div class="bar-container">
+            <div class="bar-fill matched" style="width: {{ (100 * stats.matched_count / stats.total_eobs) if stats.total_eobs else 0 }}%"></div>
+          </div>
+        </div>
+        <div class="stats-card">
+          <h3>Unmatched EOBs</h3>
+          <div class="value">{{ stats.unmatched_eob_count | intcomma }}</div>
+        </div>
+        <div class="stats-card">
+          <h3>Unmatched Txns</h3>
+          <div class="value">{{ stats.unmatched_txn_count | intcomma }}</div>
+        </div>
+        <div class="stats-card">
+          <h3>Auto Matched</h3>
+          <div class="value">{{ stats.auto_match_count | intcomma }}</div>
+        </div>
+        <div class="stats-card">
+          <h3>Manual Matched</h3>
+          <div class="value">{{ stats.manual_match_count | intcomma }}</div>
+        </div>
+      </div>
+
+      {% if stats.match_by_method %}
+      <div class="section-title" style="margin-top: 28px;">By Match Method</div>
+      <div class="table-wrapper" style="max-width: 400px;">
+      <table>
+        <thead>
+          <tr><th>Method</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for method, count in stats.match_by_method.items() %}
+          <tr>
+            <td>{{ method }}</td>
+            <td>{{ count | intcomma }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% endif %}
+
+    {% elif section == "inbox" %}
       <div class="section-title">One place for all your follow-ups</div>
       <div class="section-subtitle">Welcome to your inbox. Here you can find all your follow-ups in one convenient place.</div>
 
@@ -73,76 +487,315 @@
       </div>
 
       {% if view == "missing_eobs" %}
+      <div class="table-wrapper">
       <table>
         <thead>
-          <tr><th>Txn ID</th><th>Payment Number</th><th>Payer</th><th>Amount</th><th>Date</th></tr>
+          <tr><th>Txn ID</th><th>Payment Number</th><th>Payer</th><th>Amount</th><th>Date</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {% for task in result.items %}
-          <tr>
+          <tr data-transaction-id="{{ task.transaction_id }}" data-row-type="missing_eob">
             <td>{{ task.transaction_id }}</td>
             <td>{{ task.payment_number or "N/A" }}</td>
             <td>{{ task.payer_name or "N/A" }}</td>
             <td>{{ task.amount | format_currency }}</td>
             <td>{{ task.received_at | format_date }}</td>
+            <td>
+              <div class="reconcile-actions">
+                <input type="number" placeholder="EOB ID" min="1" data-link-id />
+                <button type="button" class="btn-link" data-action="link">Link</button>
+                <button type="button" class="btn-dismiss" data-action="dismiss-txn">Dismiss</button>
+              </div>
+              <div class="row-error" data-error style="display: none;"></div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% elif view == "missing_txn" %}
+      <div class="table-wrapper">
       <table>
         <thead>
-          <tr><th>EOB ID</th><th>Payment #</th><th>Payer</th><th>Amount</th><th>Type</th></tr>
+          <tr><th>EOB ID</th><th>Payment #</th><th>Payer</th><th>Amount</th><th>Type</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {% for task in result.items %}
-          <tr>
+          <tr data-eob-id="{{ task.eob_id }}" data-row-type="missing_txn">
             <td>{{ task.eob_id }}</td>
             <td>{{ task.payment_number }}</td>
             <td>{{ task.payer_name }}</td>
             <td>{{ task.adjusted_amount | format_currency }}</td>
             <td>{{ task.payment_type }}</td>
+            <td>
+              <div class="reconcile-actions">
+                <input type="number" placeholder="Txn ID" min="1" data-link-id />
+                <button type="button" class="btn-link" data-action="link">Link</button>
+                <button type="button" class="btn-dismiss" data-action="dismiss-eob">Dismiss</button>
+              </div>
+              <div class="row-error" data-error style="display: none;"></div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% endif %}
 
     {% elif section == "payments" %}
       <div class="section-title">Reconcile your payments</div>
       <div class="section-subtitle">Keep track of insurance deposits and reconcile your EOBs against your bank account.</div>
 
+      <div class="table-wrapper">
       <table>
         <thead>
-          <tr><th>Date</th><th>Payer</th><th>Payment #</th><th>Amount</th><th>Txn</th><th>EOB</th></tr>
+          <tr>
+            <th class="sortable-th {{ 'active' if sort_by == 'date' else '' }}">
+              <a href="/?section=payments&page=0&page_size={{ page_size }}&sort_by=date&sort_order={{ 'asc' if sort_by == 'date' and sort_order == 'desc' else 'desc' }}">Date <span class="sort-icon">{{ '↑' if sort_by == 'date' and sort_order == 'asc' else '↓' }}</span></a>
+            </th>
+            <th class="sortable-th {{ 'active' if sort_by == 'payer' else '' }}">
+              <a href="/?section=payments&page=0&page_size={{ page_size }}&sort_by=payer&sort_order={{ 'asc' if sort_by == 'payer' and sort_order == 'desc' else 'desc' }}">Payer <span class="sort-icon">{{ '↑' if sort_by == 'payer' and sort_order == 'asc' else '↓' }}</span></a>
+            </th>
+            <th class="sortable-th {{ 'active' if sort_by == 'payment_number' else '' }}">
+              <a href="/?section=payments&page=0&page_size={{ page_size }}&sort_by=payment_number&sort_order={{ 'asc' if sort_by == 'payment_number' and sort_order == 'desc' else 'desc' }}">Payment # <span class="sort-icon">{{ '↑' if sort_by == 'payment_number' and sort_order == 'asc' else '↓' }}</span></a>
+            </th>
+            <th class="sortable-th {{ 'active' if sort_by == 'amount' else '' }}">
+              <a href="/?section=payments&page=0&page_size={{ page_size }}&sort_by=amount&sort_order={{ 'asc' if sort_by == 'amount' and sort_order == 'desc' else 'desc' }}">Amount <span class="sort-icon">{{ '↑' if sort_by == 'amount' and sort_order == 'asc' else '↓' }}</span></a>
+            </th>
+            <th class="sortable-th {{ 'active' if sort_by == 'method' else '' }}">
+              <a href="/?section=payments&page=0&page_size={{ page_size }}&sort_by=method&sort_order={{ 'asc' if sort_by == 'method' and sort_order == 'desc' else 'desc' }}">Method <span class="sort-icon">{{ '↑' if sort_by == 'method' and sort_order == 'asc' else '↓' }}</span></a>
+            </th>
+            <th>Txn</th><th>EOB</th>
+          </tr>
         </thead>
         <tbody>
           {% for payment in result.items %}
-          <tr>
+          <tr class="row-clickable" data-match-detail data-eob-id="{{ payment.eob_id or '' }}" data-transaction-id="{{ payment.transaction_id or '' }}" title="Click to view match details">
             <td>{{ payment.date | format_date }}</td>
             <td>{{ payment.payer_name or "N/A" }}</td>
             <td>{{ payment.payment_number or "N/A" }}</td>
             <td>{{ payment.adjusted_amount | format_currency }}</td>
-            <td><span class="status-dot {{ payment.bank_transaction_status | lower }}"></span></td>
-            <td><span class="status-dot {{ payment.eob_status | lower }}"></span></td>
+            <td>{{ payment.match_method or "—" }}</td>
+            <td><span class="status-dot {{ payment.bank_transaction_status | lower }}">{{ payment.bank_transaction_status }}</span></td>
+            <td><span class="status-dot {{ payment.eob_status | lower }}">{{ payment.eob_status }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% endif %}
 
-    {% if result.total_count > 0 %}
+    {% if section != "overview" and result and result.total_count > 0 %}
     <div class="pagination">
       <span class="info">Page {{ result.page + 1 }} of {{ result.total_pages }} &middot; Showing {{ start_idx }}&ndash;{{ end_idx }} of {{ result.total_count }}</span>
       <span class="nav">
-        <a href="/?section={{ section }}&tab={{ tab }}&page={{ page - 1 }}&page_size={{ page_size }}" class="{{ 'disabled' if not result.has_prev else '' }}">&larr; Prev</a>
-        <a href="/?section={{ section }}&tab={{ tab }}&page={{ page + 1 }}&page_size={{ page_size }}" class="{{ 'disabled' if not result.has_next else '' }}">Next &rarr;</a>
+        <a href="/?section={{ section }}&tab={{ tab }}&page={{ page - 1 }}&page_size={{ page_size }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}" class="{{ 'disabled' if not result.has_prev else '' }}">&larr; Prev</a>
+        <a href="/?section={{ section }}&tab={{ tab }}&page={{ page + 1 }}&page_size={{ page_size }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}" class="{{ 'disabled' if not result.has_next else '' }}">Next &rarr;</a>
       </span>
     </div>
     {% endif %}
 
   </main>
 </div>
+
+<div id="match-detail-modal" class="modal-overlay">
+  <div class="modal" style="min-width: 400px;">
+    <div class="modal-header">
+      <span>Match details</span>
+      <button type="button" class="modal-close" data-modal-close>&times;</button>
+    </div>
+    <div class="modal-body" id="match-detail-json"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  function showError(row, msg) {
+    var errEl = row.querySelector('[data-error]');
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.style.display = 'block';
+    }
+  }
+  function hideError(row) {
+    var errEl = row.querySelector('[data-error]');
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+    }
+  }
+  function onSuccess(row) {
+    row.classList.add('row-success');
+    setTimeout(function() { window.location.reload(); }, 300);
+  }
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    var row = btn.closest('tr');
+    if (!row) return;
+
+    var action = btn.getAttribute('data-action');
+    if (action === 'link') {
+      var input = row.querySelector('[data-link-id]');
+      var id = input && parseInt(input.value, 10);
+      if (!id || id < 1) {
+        showError(row, 'Enter a valid ID');
+        return;
+      }
+      hideError(row);
+
+      var eobId, txnId;
+      if (row.getAttribute('data-row-type') === 'missing_eob') {
+        txnId = parseInt(row.getAttribute('data-transaction-id'), 10);
+        eobId = id;
+      } else {
+        eobId = parseInt(row.getAttribute('data-eob-id'), 10);
+        txnId = id;
+      }
+
+      fetch('/api/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eob_id: eobId, transaction_id: txnId })
+      })
+        .then(function(r) {
+          if (r.ok) return r.json();
+          return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+        })
+        .then(function() { onSuccess(row); })
+        .catch(function(err) { showError(row, err.message); });
+    } else if (action === 'dismiss-eob') {
+      var eobId = parseInt(row.getAttribute('data-eob-id'), 10);
+      hideError(row);
+      fetch('/api/reconcile/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eob_id: eobId })
+      })
+        .then(function(r) {
+          if (r.ok) return r.json();
+          return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+        })
+        .then(function() { onSuccess(row); })
+        .catch(function(err) { showError(row, err.message); });
+    } else if (action === 'dismiss-txn') {
+      var txnId = parseInt(row.getAttribute('data-transaction-id'), 10);
+      hideError(row);
+      fetch('/api/reconcile/dismiss-transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transaction_id: txnId })
+      })
+        .then(function(r) {
+          if (r.ok) return r.json();
+          return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+        })
+        .then(function() { onSuccess(row); })
+        .catch(function(err) { showError(row, err.message); });
+    }
+  });
+
+  var modal = document.getElementById('match-detail-modal');
+  var modalBody = document.getElementById('match-detail-json');
+  function closeModal() { modal.classList.remove('visible'); }
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function highlightJson(obj, indent) {
+    indent = indent || 0;
+    var pad = '  '.repeat(indent);
+    if (obj === null) return '<span class="json-null">null</span>';
+    if (typeof obj === 'boolean') return '<span class="json-bool">' + obj + '</span>';
+    if (typeof obj === 'number') return '<span class="json-number">' + obj + '</span>';
+    if (typeof obj === 'string') return '<span class="json-string">"' + escapeHtml(obj) + '"</span>';
+    if (Array.isArray(obj)) {
+      if (obj.length === 0) return '<span class="json-bracket">[]</span>';
+      var parts = ['<span class="json-bracket">[</span>'];
+      for (var i = 0; i < obj.length; i++) {
+        parts.push('\n' + pad + '  ' + highlightJson(obj[i], indent + 1));
+        if (i < obj.length - 1) parts.push('<span class="json-bracket">,</span>');
+      }
+      parts.push('\n' + pad + '<span class="json-bracket">]</span>');
+      return parts.join('');
+    }
+    if (typeof obj === 'object') {
+      var keys = Object.keys(obj);
+      if (keys.length === 0) return '<span class="json-bracket">{}</span>';
+      var parts = ['<span class="json-bracket">{</span>'];
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var v = highlightJson(obj[k], indent + 1);
+        parts.push('\n' + pad + '  <span class="json-key">"' + escapeHtml(k) + '"</span><span class="json-bracket">: </span>' + v);
+        if (i < keys.length - 1) parts.push('<span class="json-bracket">,</span>');
+      }
+      parts.push('\n' + pad + '<span class="json-bracket">}</span>');
+      return parts.join('');
+    }
+    return '';
+  }
+  function showModal(json) {
+    if (typeof json === 'string') {
+      modalBody.textContent = json;
+    } else {
+      try {
+        modalBody.innerHTML = highlightJson(json);
+      } catch (e) {
+        modalBody.textContent = JSON.stringify(json, null, 2);
+      }
+    }
+    modal.classList.add('visible');
+  }
+  document.querySelector('[data-modal-close]').addEventListener('click', closeModal);
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+
+  var runPipelineBtn = document.getElementById('run-pipeline-btn');
+  var pipelineStatus = document.getElementById('pipeline-status');
+  if (runPipelineBtn && pipelineStatus) {
+    runPipelineBtn.addEventListener('click', function() {
+      runPipelineBtn.disabled = true;
+      pipelineStatus.textContent = 'Running…';
+      pipelineStatus.className = 'pipeline-status running';
+      fetch('/api/run-pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_llm: true, overwrite: false })
+      })
+        .then(function(r) {
+          if (r.ok) return r.json();
+          return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+        })
+        .then(function(data) {
+          pipelineStatus.textContent = 'Done: ' + data.classified + ' classified, ' + data.matched + ' matched';
+          pipelineStatus.className = 'pipeline-status success';
+          window.location.reload();
+        })
+        .catch(function(err) {
+          pipelineStatus.textContent = 'Error: ' + err.message;
+          pipelineStatus.className = 'pipeline-status error';
+        })
+        .finally(function() {
+          runPipelineBtn.disabled = false;
+        });
+    });
+  }
+
+  document.addEventListener('click', function(e) {
+    var row = e.target.closest('[data-match-detail]');
+    if (!row) return;
+    var eobId = row.getAttribute('data-eob-id');
+    var txnId = row.getAttribute('data-transaction-id');
+    if ((!eobId || eobId === '') && (!txnId || txnId === '')) return;
+    var params = new URLSearchParams();
+    if (eobId && eobId !== '') params.set('eob_id', eobId);
+    if (txnId && txnId !== '') params.set('transaction_id', txnId);
+    fetch('/api/match-detail?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(showModal)
+      .catch(function(err) { showModal({ error: err.message }); });
+  });
+})();
+</script>
 
 </body>
 </html>

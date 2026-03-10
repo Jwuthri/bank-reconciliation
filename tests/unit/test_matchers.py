@@ -13,7 +13,12 @@ from bank_reconciliation.reconciliation.matchers import (
     MatchResult,
     PayerAmountDateMatcher,
     PaymentNumberMatcher,
+    build_payer_note_map_from_db,
     extract_trn_payment_number,
+)
+from bank_reconciliation.reconciliation.normalize import (
+    normalize_note,
+    normalize_payment_number,
 )
 
 
@@ -537,3 +542,141 @@ class TestPayerAmountDateMatcher:
         # 10-day window: match
         matcher = self._make_matcher([eob], date_window_days=10)
         assert len(matcher.match([bt])) == 1
+
+
+# ---------------------------------------------------------------------------
+# Normalization helpers
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeNote:
+    def test_none_returns_empty(self):
+        assert normalize_note(None) == ""
+
+    def test_empty_returns_empty(self):
+        assert normalize_note("") == ""
+
+    def test_whitespace_only_returns_empty(self):
+        assert normalize_note("   ") == ""
+
+    def test_strips_and_collapses(self):
+        assert normalize_note("  hello   world  ") == "hello world"
+
+    def test_tabs_and_newlines(self):
+        assert normalize_note("\thello\n  world\t") == "hello world"
+
+
+class TestNormalizePaymentNumber:
+    def test_none_returns_none(self):
+        assert normalize_payment_number(None) is None
+
+    def test_empty_returns_none(self):
+        assert normalize_payment_number("") is None
+
+    def test_strips_dashes(self):
+        assert normalize_payment_number("736-886-274") == "736886274"
+
+    def test_strips_spaces(self):
+        assert normalize_payment_number("736 886 274") == "736886274"
+
+    def test_strips_mixed_punctuation(self):
+        assert normalize_payment_number(" 736.886/274 ") == "736886274"
+
+    def test_alphanumeric_preserved(self):
+        assert normalize_payment_number("ABC123") == "ABC123"
+
+    def test_only_punctuation_returns_none(self):
+        assert normalize_payment_number("---") is None
+
+
+# ---------------------------------------------------------------------------
+# Normalization integration in matchers
+# ---------------------------------------------------------------------------
+
+
+class TestPaymentNumberMatcherNormalization:
+    """Ensure PaymentNumberMatcher normalizes both EOB keys and TRN extraction."""
+
+    def test_eob_with_dashes_matches_trn_without(self):
+        eob = FakeEOB(
+            id=1,
+            payment_number="736-886-274",
+            payer_id=1,
+            adjusted_amount=24700,
+            payment_date=datetime(2025, 9, 9),
+        )
+        bt = FakeBankTransaction(
+            id=10,
+            amount=-24700,
+            note="HCCLAIMPMT ZP UHCDComm5044 TRN*1*736886274*1470858530\\",
+            received_at=datetime(2025, 9, 9),
+        )
+        matcher = PaymentNumberMatcher([eob])
+        results = matcher.match([bt])
+        assert len(results) == 1
+        assert results[0].eob_id == 1
+
+    def test_eob_with_spaces_matches_trn_without(self):
+        eob = FakeEOB(
+            id=1,
+            payment_number="736 886 274",
+            payer_id=1,
+            adjusted_amount=24700,
+            payment_date=datetime(2025, 9, 9),
+        )
+        bt = FakeBankTransaction(
+            id=10,
+            amount=-24700,
+            note="HCCLAIMPMT ZP UHCDComm5044 TRN*1*736886274*1470858530\\",
+            received_at=datetime(2025, 9, 9),
+        )
+        matcher = PaymentNumberMatcher([eob])
+        results = matcher.match([bt])
+        assert len(results) == 1
+
+
+class TestPayerAmountDateMatcherNormalization:
+    """Ensure PayerAmountDateMatcher normalizes notes before payer lookup."""
+
+    PAYER_NOTE_MAP = {3: "MetLife"}
+
+    def test_extra_whitespace_in_note_still_matches(self):
+        eob = FakeEOB(
+            id=1,
+            payment_number="P001",
+            payer_id=3,
+            adjusted_amount=24120,
+            payment_date=datetime(2025, 9, 5),
+        )
+        bt = FakeBankTransaction(
+            id=7,
+            amount=-24120,
+            note="  MetLife  ",
+            received_at=datetime(2025, 9, 9),
+        )
+        matcher = PayerAmountDateMatcher(
+            [eob], payer_note_map=self.PAYER_NOTE_MAP, date_window_days=5,
+        )
+        results = matcher.match([bt])
+        assert len(results) == 1
+        assert results[0].eob_id == 1
+
+
+class TestBuildPayerNoteMapCaseInsensitive:
+    """build_payer_note_map_from_db should match payer names case-insensitively."""
+
+    def test_lowercase_payer_name_matches(self):
+        payer = FakePayer(id=10, name="metlife dental")
+        result = build_payer_note_map_from_db([payer])
+        assert 10 in result
+        assert result[10] == "MetLife"
+
+    def test_uppercase_payer_name_matches(self):
+        payer = FakePayer(id=11, name="METLIFE DENTAL")
+        result = build_payer_note_map_from_db([payer])
+        assert 11 in result
+
+    def test_exact_case_still_works(self):
+        payer = FakePayer(id=12, name="MetLife")
+        result = build_payer_note_map_from_db([payer])
+        assert 12 in result

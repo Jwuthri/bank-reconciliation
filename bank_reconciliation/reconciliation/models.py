@@ -37,6 +37,10 @@ class DashboardPayment(BaseModel):
     eob_status: Literal["AWAITING", "RECEIVED"] = Field(
         ..., description="Whether an EOB exists for this item."
     )
+    match_method: str | None = Field(
+        None,
+        description="How the match was made: payment_number, payer_amount_date, manual, manual_dismiss, or None if unmatched.",
+    )
 
 
 class MissingTransactionTask(BaseModel):
@@ -77,6 +81,37 @@ class MissingEOBTask(BaseModel):
     received_at: datetime = Field(
         ...,
         description="The date and time the transaction was received.",
+    )
+
+
+class ReconciliationStats(BaseModel):
+    """Aggregate statistics for classification and reconciliation."""
+
+    total_transactions: int = Field(..., description="Total bank transactions.")
+    insurance_count: int = Field(..., description="Transactions classified as insurance.")
+    not_insurance_count: int = Field(
+        ..., description="Transactions classified as not insurance."
+    )
+    unknown_count: int = Field(
+        ..., description="Transactions with unknown classification."
+    )
+    total_eobs: int = Field(..., description="Total EOBs.")
+    matched_count: int = Field(..., description="EOBs with a match.")
+    unmatched_eob_count: int = Field(
+        ..., description="EOBs without a matching transaction."
+    )
+    unmatched_txn_count: int = Field(
+        ..., description="Insurance transactions without a matching EOB."
+    )
+    manual_match_count: int = Field(
+        ..., description="Matches created manually by user."
+    )
+    auto_match_count: int = Field(
+        ..., description="Matches created by automated matchers."
+    )
+    match_by_method: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count per match method (payment_number, payer_amount_date, manual, etc.).",
     )
 
 

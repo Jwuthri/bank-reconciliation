@@ -190,7 +190,6 @@ class TestEdgeCases:
         "note",
         [
             "DEPOSIT",
-            "DELTA DENTAL MA PAYMENT 5803916",
             "RONSMEDICALGASES PURCHASE JOHN DOE PE",
             "DCM DSO LLC ACCTVERIFY 026EYHFXQ1I57H3",
             "69199 JANE DOE ACCTVERIFY 14053751",
@@ -201,6 +200,12 @@ class TestEdgeCases:
         assert result.is_insurance is False
         assert result.label == "unknown"
         assert result.confidence == 0.0
+
+    def test_delta_dental_ma_now_classified_as_insurance(self):
+        """'DELTA DENTAL MA PAYMENT' is now caught by the Delta_Dental rule."""
+        result = classify_transaction("DELTA DENTAL MA PAYMENT 5803916")
+        assert result.is_insurance is True
+        assert result.label == "Delta_Dental"
 
 
 # ---------------------------------------------------------------------------
@@ -290,3 +295,52 @@ class TestConfidence:
             result = classify_transaction(note)
             assert result.label == "unknown"
             assert result.confidence == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Normalization-related tests
+# ---------------------------------------------------------------------------
+
+
+class TestNormalization:
+    """Tests that normalization is applied before rule matching."""
+
+    def test_metlife_trailing_whitespace(self):
+        result = classify_transaction("MetLife ")
+        assert result.is_insurance is True
+        assert result.label == "MetLife"
+
+    def test_metlife_leading_whitespace(self):
+        result = classify_transaction(" MetLife")
+        assert result.is_insurance is True
+        assert result.label == "MetLife"
+
+    def test_metlife_surrounding_whitespace(self):
+        result = classify_transaction("  MetLife  ")
+        assert result.is_insurance is True
+        assert result.label == "MetLife"
+
+    def test_delta_dental_mixed_case(self):
+        result = classify_transaction("Delta Dental")
+        assert result.is_insurance is True
+        assert result.label == "Delta_Dental"
+
+    def test_delta_dental_upper(self):
+        result = classify_transaction("DELTA DENTAL")
+        assert result.is_insurance is True
+        assert result.label == "Delta_Dental"
+
+    def test_delta_dental_with_suffix(self):
+        result = classify_transaction("Delta Dental MA PAYMENT 5803916")
+        assert result.is_insurance is True
+        assert result.label == "Delta_Dental"
+
+    def test_collapsed_whitespace_in_note(self):
+        result = classify_transaction("  HCCLAIMPMT   ZP   UHCDComm5044  ")
+        assert result.is_insurance is True
+        assert result.label == "HCCLAIMPMT"
+
+    def test_whitespace_only_note(self):
+        result = classify_transaction("   ")
+        assert result.is_insurance is False
+        assert result.label == "empty_note"

@@ -423,3 +423,140 @@ class TestGetMissingPaymentEobs:
 
         task = next(t for t in result.items if t.transaction_id == bt.id)
         assert task.payer_name == "MetLife"
+
+
+# ──────────────────────────────────────────────────────────────────────
+# manual_reconcile
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestManualReconcile:
+    def test_creates_match(self):
+        """Manual reconcile creates a ReconciliationMatch with method=manual."""
+        payer = _payer()
+        eob = _eob(payer, payment_number="M1", adjusted_amount=5000, day=5)
+        bt = _bt(amount=-5000, note="HCCLAIMPMT TRN*1*X*Y\\", day=5)
+        _classify(bt, is_insurance=True)
+
+        engine = LiveReconciliationEngine()
+        match_id = engine.manual_reconcile(eob_id=eob.id, transaction_id=bt.id)
+
+        assert match_id > 0
+        match = ReconciliationMatch.get_by_id(match_id)
+        assert match.eob_id == eob.id
+        assert match.bank_transaction_id == bt.id
+        assert match.match_method == "manual"
+        assert match.confidence == 1.0
+
+    def test_raises_when_eob_not_found(self):
+        payer = _payer()
+        bt = _bt(amount=-5000, note="HCCLAIMPMT x", day=5)
+        _classify(bt, is_insurance=True)
+
+        engine = LiveReconciliationEngine()
+        with pytest.raises(ValueError, match="EOB .* not found"):
+            engine.manual_reconcile(eob_id=99999, transaction_id=bt.id)
+
+    def test_raises_when_transaction_not_found(self):
+        payer = _payer()
+        eob = _eob(payer, adjusted_amount=5000, day=5)
+
+        engine = LiveReconciliationEngine()
+        with pytest.raises(ValueError, match="Bank transaction .* not found"):
+            engine.manual_reconcile(eob_id=eob.id, transaction_id=99999)
+
+    def test_raises_when_eob_already_matched(self):
+        payer = _payer()
+        eob = _eob(payer, payment_number="M1", adjusted_amount=5000, day=5)
+        bt1 = _bt(amount=-5000, note="HCCLAIMPMT a", day=5)
+        bt2 = _bt(amount=-5000, note="HCCLAIMPMT b", day=6)
+        _classify(bt1, is_insurance=True)
+        _classify(bt2, is_insurance=True)
+        _match(eob, bt1)
+
+        engine = LiveReconciliationEngine()
+        with pytest.raises(ValueError, match="already matched"):
+            engine.manual_reconcile(eob_id=eob.id, transaction_id=bt2.id)
+
+    def test_raises_when_transaction_not_insurance(self):
+        payer = _payer()
+        eob = _eob(payer, adjusted_amount=5000, day=5)
+        bt = _bt(amount=-5000, note="PAYROLL", day=5)
+        _classify(bt, is_insurance=False)
+
+        engine = LiveReconciliationEngine()
+        with pytest.raises(ValueError, match="not classified as insurance"):
+            engine.manual_reconcile(eob_id=eob.id, transaction_id=bt.id)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# dismiss_item
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestDismissItem:
+    def test_dismiss_eob_creates_match_with_null_transaction(self):
+        """Dismissing an EOB creates manual_dismiss match with bank_transaction=None."""
+        payer = _payer()
+        eob = _eob(payer, payment_number="D1", adjusted_amount=3000, day=5)
+
+        engine = LiveReconciliationEngine()
+        match_id = engine.dismiss_item(eob_id=eob.id)
+
+        assert match_id > 0
+        match = ReconciliationMatch.get_by_id(match_id)
+        assert match.eob_id == eob.id
+        assert match.bank_transaction_id is None
+        assert match.match_method == "manual_dismiss"
+
+    def test_dismiss_transaction_updates_classification(self):
+        """Dismissing a transaction marks it as not insurance."""
+        bt = _bt(amount=-5000, note="HCCLAIMPMT x", day=5)
+        _classify(bt, is_insurance=True)
+
+        engine = LiveReconciliationEngine()
+        result = engine.dismiss_item(transaction_id=bt.id)
+
+        assert result == 0
+        tc = TransactionClassification.get(TransactionClassification.bank_transaction == bt)
+        assert tc.is_insurance is False
+        assert tc.label == "manual_dismissed"
+
+    def test_dismiss_raises_when_both_provided(self):
+        engine = LiveReconciliationEngine()
+        with pytest.raises(ValueError, match="Exactly one"):
+            engine.dismiss_item(eob_id=1, transaction_id=2)
+
+    def test_dismiss_raises_when_neither_provided(self):
+        engine = LiveReconciliationEngine()
+        with pytest.raises(ValueError, match="Exactly one"):
+            engine.dismiss_item()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# get_stats
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestGetStats:
+    def test_returns_stats(self):
+        """get_stats returns ReconciliationStats with correct counts."""
+        payer = _payer()
+        bt1 = _bt(amount=-1000, note="HCCLAIMPMT a", day=1)
+        bt2 = _bt(amount=-2000, note="PAYROLL", day=2)
+        _classify(bt1, is_insurance=True)
+        _classify(bt2, is_insurance=False)
+        eob = _eob(payer, payment_number="P1", adjusted_amount=1000, day=1)
+        _match(eob, bt1)
+
+        engine = LiveReconciliationEngine()
+        stats = engine.get_stats()
+
+        assert stats.total_transactions == 2
+        assert stats.insurance_count == 1
+        assert stats.not_insurance_count == 1
+        assert stats.unknown_count == 0
+        assert stats.total_eobs == 1
+        assert stats.matched_count == 1
+        assert "payment_number" in stats.match_by_method or "manual" in stats.match_by_method
+        assert stats.auto_match_count + stats.manual_match_count == stats.matched_count

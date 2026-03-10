@@ -68,9 +68,17 @@ flowchart TB
 
 ## Findings (Short)
 
-- **~54% match rate**: 2,839 of 5,238 insurance transactions matched to EOBs.
+- **EOB matching accuracy is strong** — Most EOBs are matched successfully.
+- **Both match rates matter:**
+  - **EOBs → transactions**: 3,293 of 3,526 EOBs matched to a bank transaction (~93%); ~233 unmatched EOBs.
+  - **Insurance txns → EOBs**: 2,839 of 5,238 insurance transactions matched to an EOB (~54%).
 - **Main gap**: 1,677 have TRN payment numbers in notes but no EOB with that `payment_number` — bank and EOB data use different schemes or time periods. Not fixable by code.
 - **Other gaps**: 571 have payer in note but no EOB for that payer+amount; 125 fail date window; 9 have amount mismatch > $5.
+
+### Opportunities to Expand Match Rate
+
+1. **Relax constraints** — Consider loosening date window (e.g. 14 → 21 days), amount tolerance (e.g. $5 → $10), or confidence thresholds to capture more borderline matches (with manual review where needed).
+2. **Insurance classifier improvement** — Some transactions may be misclassified as NOT insurance, so they never enter the matching pipeline. Improving rule coverage and LLM prompts could surface more insurance transactions and increase the match rate.
 
 ---
 
@@ -99,15 +107,17 @@ For **unknown** transactions (no rule, no LLM), we choose how to treat them:
 
 ## Future Improvements
 
-1. **TRN payment number alignment** — Investigate why bank TRN numbers don't match EOB `payment_number`. May need data pipeline changes, format normalization, or upstream integration.
-2. **LLM tuning** — LLM is default for unknowns; tune prompts and evaluate cost vs accuracy.
-3. **More payer patterns** — Add Beam, GEHA, Humana, UMR, etc. to `payer_note_map` as patterns are discovered.
-4. **HCCLAIMPMT payer code mapping** — Use clearinghouse codes (UHCDComm, PAY PLUS, DELTADENTALCA) to infer payer for amount+date matching when TRN fails.
-5. **Adaptive date window** — Use payer-specific windows (e.g. MetLife vs ACH) based on historical settlement patterns.
-6. **Confidence thresholds** — Surface only matches above a threshold (e.g. 0.85) as auto-reconciled; lower-confidence for manual review.
-7. **Amount-only with strong date** — For single EOB with same amount and very close date (e.g. 1–2 days), consider low-confidence match with explicit review flag.
-8. **Duplicate payment_number handling** — Warn or disambiguate when multiple EOBs share the same `payment_number`.
-9. **NON_PAYMENT EOBs** — Refine handling of zero-dollar and adjustment EOBs (GEHA, MetLife refunds).
-10. **CHECK-type matching** — Improve matching of paper-check EOBs to REMOTE DEPOSIT CAPTURE transactions.
-11. **Scheduled reconciliation** — Run matching on a schedule; configurable timeout before surfacing tasks.
-12. **Audit trail** — Log match decisions (method, confidence) for debugging and compliance.
+1. **Insurance classifier expansion** — Improve rule coverage and LLM prompts so fewer true insurance transactions are classified as NOT insurance; this directly expands the match rate.
+2. **Constraint relaxation** — Experiment with looser date window, amount tolerance, or confidence thresholds (with manual-review flags) to capture more borderline matches.
+3. **TRN payment number alignment** — Investigate why bank TRN numbers don't match EOB `payment_number`. May need data pipeline changes, format normalization, or upstream integration.
+4. **LLM tuning** — LLM is default for unknowns; tune prompts and evaluate cost vs accuracy.
+5. **More payer patterns** — Add Beam, GEHA, Humana, UMR, etc. to `payer_note_map` as patterns are discovered.
+6. **HCCLAIMPMT payer code mapping** — Use clearinghouse codes (UHCDComm, PAY PLUS, DELTADENTALCA) to infer payer for amount+date matching when TRN fails.
+7. **Adaptive date window** — Use payer-specific windows (e.g. MetLife vs ACH) based on historical settlement patterns.
+8. **Confidence thresholds** — Surface only matches above a threshold (e.g. 0.85) as auto-reconciled; lower-confidence for manual review.
+9. **Amount-only with strong date** — For single EOB with same amount and very close date (e.g. 1–2 days), consider low-confidence match with explicit review flag.
+10. **Duplicate payment_number handling** — Warn or disambiguate when multiple EOBs share the same `payment_number`.
+11. **NON_PAYMENT EOBs** — Refine handling of zero-dollar and adjustment EOBs (GEHA, MetLife refunds).
+12. **CHECK-type matching** — Improve matching of paper-check EOBs to REMOTE DEPOSIT CAPTURE transactions.
+13. **Scheduled reconciliation** — Run matching on a schedule; configurable timeout before surfacing tasks.
+14. **Audit trail** — Log match decisions (method, confidence) for debugging and compliance.

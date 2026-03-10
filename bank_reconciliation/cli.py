@@ -83,6 +83,26 @@ def list_missing_transactions(
     console.print(f"\nShowing {len(result.items)} of {result.total_count} total tasks")
 
 
+def run_pipeline(
+    engine: ReconciliationEngine,
+    *,
+    use_llm: bool = True,
+    overwrite: bool = False,
+) -> None:
+    """Run the full pipeline: classify (is insurance) then reconcile."""
+    from rich.console import Console
+
+    console = Console()
+    console.print("[bold]Running pipeline: classify → reconcile[/bold]\n")
+
+    stats = engine.run_matching(use_llm=use_llm, overwrite=overwrite)
+
+    console.print(f"  [green]Classified:[/green] {stats.get('classified', 0)} transactions")
+    console.print(f"  [green]Matched:[/green] {stats.get('matched', 0)} new pairs")
+    console.print(f"  [dim]Skipped existing:[/dim] {stats.get('skipped_existing', 0)}")
+    console.print("\n[bold green]Pipeline complete.[/bold green]")
+
+
 def list_missing_payment_eobs(
     engine: ReconciliationEngine, page: int, page_size: int
 ) -> None:
@@ -154,6 +174,22 @@ def main():
         "--page-size", type=int, default=20, help="Items per page (default: 20)"
     )
 
+    # run:pipeline command
+    pipeline_parser = subparsers.add_parser(
+        "run:pipeline",
+        help="Run full pipeline: classify (is insurance) then reconcile on all data",
+    )
+    pipeline_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip LLM stage for unknown transactions (faster, rule-based only)",
+    )
+    pipeline_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Reclassify all transactions from scratch (drops existing classifications)",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -164,14 +200,21 @@ def main():
     try:
         init_db()
         engine = LiveReconciliationEngine()
-        engine.run_matching()
 
-        if args.command == "list:payments":
-            list_payments(engine, args.page, args.page_size)
-        elif args.command == "list:missing-transactions":
-            list_missing_transactions(engine, args.page, args.page_size)
-        elif args.command == "list:missing-payment-eob":
-            list_missing_payment_eobs(engine, args.page, args.page_size)
+        if args.command == "run:pipeline":
+            run_pipeline(
+                engine,
+                use_llm=not args.no_llm,
+                overwrite=args.overwrite,
+            )
+        else:
+            engine.run_matching()
+            if args.command == "list:payments":
+                list_payments(engine, args.page, args.page_size)
+            elif args.command == "list:missing-transactions":
+                list_missing_transactions(engine, args.page, args.page_size)
+            elif args.command == "list:missing-payment-eob":
+                list_missing_payment_eobs(engine, args.page, args.page_size)
     finally:
         if not db.is_closed():
             db.close()

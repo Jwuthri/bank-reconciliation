@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Literal, Sequence
 
 from bank_reconciliation.db.models import BankTransaction, TransactionClassification
+from bank_reconciliation.reconciliation.normalize import normalize_note
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,9 @@ def _noise(pattern: str, label: str) -> _Rule:
 RULES: list[_Rule] = [
     # ---- insurance (positive signals) ----
     _ins(r"HCCLAIMPMT", "HCCLAIMPMT"),
-    _ins(r"^MetLife$", "MetLife"),
+    _ins(r"^MetLife\s*$", "MetLife"),
     _ins(r"CALIFORNIA DENTA", "CALIFORNIA_DENTA"),
+    _ins(r"\bDelta\s+Dental\b", "Delta_Dental"),
     _ins(r"Guardian Life", "Guardian"),
     # ---- noise (negative signals) ----
     _noise(r"BNKCD SETTLE", "card_settlement"),
@@ -110,11 +112,12 @@ class Classification:
 
 def classify_transaction(note: str | None) -> Classification:
     """Classify a single transaction note. Pure function, no DB access."""
-    if not note:
+    normalized = normalize_note(note)
+    if not normalized:
         return Classification(is_insurance=False, label="empty_note")
 
     for rule in RULES:
-        if rule.pattern.search(note):
+        if rule.pattern.search(normalized):
             return Classification(is_insurance=rule.is_insurance, label=rule.label)
 
     return Classification(is_insurance=False, label="unknown", confidence=0.0)

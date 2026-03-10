@@ -5,6 +5,7 @@ from .models import (
     MissingEOBTask,
     MissingTransactionTask,
     PaginatedResult,
+    ReconciliationStats,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "MissingTransactionTask",
     "MissingEOBTask",
     "PaginatedResult",
+    "ReconciliationStats",
 ]

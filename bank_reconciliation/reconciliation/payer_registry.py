@@ -40,5 +40,8 @@ HCCLAIMPMT_PAYER_CODES: dict[str, str | None] = {
     "DDPAR": "Delta Dental",
     "DENTEGRA": "Ameritas/Dentegra",
     "HNB - ECHO": None,
+    "HNB-ECHO": None,
+    "HNBECHO": None,
     "PNC-ECHO": None,
+    "PNCECHO": None,
 }

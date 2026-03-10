@@ -21,6 +21,7 @@ from bank_reconciliation.db.models import (
     TransactionClassification,
 )
 from bank_reconciliation.reconciliation.classifier import classify_all
+from bank_reconciliation.reconciliation.normalize import normalize_note
 from bank_reconciliation.reconciliation.matchers import (
     MatchResult,
     Matcher,
@@ -36,6 +37,7 @@ from .models import (
     MissingEOBTask,
     MissingTransactionTask,
     PaginatedResult,
+    ReconciliationStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,14 +50,15 @@ def _infer_payer_name(note: str | None) -> str | None:
         NOTE_PATTERN_TO_DISPLAY_NAME,
     )
 
-    if not note:
+    normalized = normalize_note(note)
+    if not normalized:
         return None
     for pattern, name in NOTE_PATTERN_TO_DISPLAY_NAME.items():
-        if pattern in note:
+        if pattern.upper() in normalized.upper():
             return name
-    if "HCCLAIMPMT" in note:
+    if "HCCLAIMPMT" in normalized.upper():
         for code, payer in HCCLAIMPMT_PAYER_CODES.items():
-            if code in note:
+            if code.upper() in normalized.upper():
                 return payer
         return "HCCLAIMPMT"
     return None
@@ -69,15 +72,19 @@ class LiveReconciliationEngine(ReconciliationEngine):
         *,
         use_llm: bool = True,
         mode: Literal["precision", "recall"] = "precision",
+        overwrite: bool = False,
     ) -> dict[str, int]:
         """Run the full classify → match pipeline and persist results.
+
+        Stage 1: Classify all bank transactions as insurance or not.
+        Stage 2: Match insurance transactions to EOBs.
 
         Returns summary stats: {classified, matched, skipped_existing}.
         """
         stats: dict[str, int] = {}
 
         # Stage 1: classify
-        counts = classify_all(use_llm=use_llm, mode=mode)
+        counts = classify_all(use_llm=use_llm, mode=mode, overwrite=overwrite)
         stats["classified"] = sum(counts.values())
 
         # Stage 2: match
@@ -158,141 +165,122 @@ class LiveReconciliationEngine(ReconciliationEngine):
     # ──────────────────────────────────────────────────────────────────
 
     def get_dashboard_payments(
-        self, page: int = 0, page_size: int = 20
+        self,
+        page: int = 0,
+        page_size: int = 20,
+        sort_by: str = "date",
+        sort_order: str = "desc",
     ) -> PaginatedResult[DashboardPayment]:
         matched_eob_ids_sq = ReconciliationMatch.select(ReconciliationMatch.eob)
         matched_txn_ids_sq = ReconciliationMatch.select(
             ReconciliationMatch.bank_transaction
         )
 
-        # Count each category via DB
-        matched_count = ReconciliationMatch.select().count()
+        # Load all items (no pagination at DB level for sort support)
+        items: list[DashboardPayment] = []
 
-        unmatched_eob_base = (
-            EOB.select()
+        # --- Category 1: Matched pairs ---
+        matched_query = (
+            ReconciliationMatch.select(
+                ReconciliationMatch, EOB, BankTransaction, Payer,
+            )
+            .join(EOB, on=(ReconciliationMatch.eob == EOB.id))
+            .join(Payer, on=(EOB.payer == Payer.id))
+            .switch(ReconciliationMatch)
+            .join(
+                BankTransaction,
+                on=(ReconciliationMatch.bank_transaction == BankTransaction.id),
+            )
+        )
+        for row in matched_query:
+            eob = row.eob
+            bt = row.bank_transaction
+            items.append(
+                DashboardPayment(
+                    eob_id=eob.id,
+                    transaction_id=bt.id,
+                    payer_name=eob.payer.name,
+                    payment_number=eob.payment_number,
+                    payment_amount=eob.payment_amount,
+                    adjusted_amount=eob.adjusted_amount,
+                    date=eob.payment_date,
+                    bank_transaction_status="RECEIVED",
+                    eob_status="RECEIVED",
+                    match_method=row.match_method,
+                )
+            )
+
+        # --- Category 2: Unmatched EOBs ---
+        eob_query = (
+            EOB.select(EOB, Payer)
+            .join(Payer, on=(EOB.payer == Payer.id))
             .where(EOB.id.not_in(matched_eob_ids_sq))
             .where(
                 ~(
-                    (EOB.payment_type == "NON_PAYMENT") & (EOB.adjusted_amount == 0)
+                    (EOB.payment_type == "NON_PAYMENT")
+                    & (EOB.adjusted_amount == 0)
                 )
             )
         )
-        unmatched_eob_count = unmatched_eob_base.count()
+        for eob in eob_query:
+            items.append(
+                DashboardPayment(
+                    eob_id=eob.id,
+                    transaction_id=None,
+                    payer_name=eob.payer.name,
+                    payment_number=eob.payment_number,
+                    payment_amount=eob.payment_amount,
+                    adjusted_amount=eob.adjusted_amount,
+                    date=eob.payment_date,
+                    bank_transaction_status="AWAITING",
+                    eob_status="RECEIVED",
+                )
+            )
 
-        unmatched_txn_base = (
-            BankTransaction.select()
+        # --- Category 3: Unmatched insurance transactions ---
+        txn_query = (
+            BankTransaction.select(BankTransaction, TransactionClassification)
             .join(TransactionClassification)
             .where(TransactionClassification.is_insurance == True)  # noqa: E712
             .where(BankTransaction.id.not_in(matched_txn_ids_sq))
         )
-        unmatched_txn_count = unmatched_txn_base.count()
-
-        total_count = matched_count + unmatched_eob_count + unmatched_txn_count
-
-        # Walk through the three categories in order (matched, unmatched EOBs,
-        # unmatched txns) and only fetch the rows that fall on the requested page.
-        offset = page * page_size
-        remaining = page_size
-        items: list[DashboardPayment] = []
-
-        # --- Category 1: Matched pairs (sorted by EOB payment_date DESC) ---
-        if offset < matched_count and remaining > 0:
-            skip = offset
-            matched_query = (
-                ReconciliationMatch.select(
-                    ReconciliationMatch, EOB, BankTransaction, Payer,
+        for bt in txn_query:
+            items.append(
+                DashboardPayment(
+                    eob_id=None,
+                    transaction_id=bt.id,
+                    payer_name=_infer_payer_name(bt.note),
+                    payment_number=extract_trn_payment_number(bt.note),
+                    payment_amount=None,
+                    adjusted_amount=abs(bt.amount),
+                    date=bt.received_at,
+                    bank_transaction_status="RECEIVED",
+                    eob_status="AWAITING",
                 )
-                .join(EOB, on=(ReconciliationMatch.eob == EOB.id))
-                .join(Payer, on=(EOB.payer == Payer.id))
-                .switch(ReconciliationMatch)
-                .join(
-                    BankTransaction,
-                    on=(ReconciliationMatch.bank_transaction == BankTransaction.id),
-                )
-                .order_by(EOB.payment_date.desc())
-                .offset(skip)
-                .limit(remaining)
             )
-            for row in matched_query:
-                eob = row.eob
-                bt = row.bank_transaction
-                items.append(
-                    DashboardPayment(
-                        eob_id=eob.id,
-                        transaction_id=bt.id,
-                        payer_name=eob.payer.name,
-                        payment_number=eob.payment_number,
-                        payment_amount=eob.payment_amount,
-                        adjusted_amount=eob.adjusted_amount,
-                        date=eob.payment_date,
-                        bank_transaction_status="RECEIVED",
-                        eob_status="RECEIVED",
-                    )
-                )
-            remaining -= len(items)
 
-        # --- Category 2: Unmatched EOBs ---
-        cat2_start = matched_count
-        if offset < cat2_start + unmatched_eob_count and remaining > 0:
-            skip = max(0, offset - cat2_start)
-            eob_query = (
-                EOB.select(EOB, Payer)
-                .join(Payer, on=(EOB.payer == Payer.id))
-                .where(EOB.id.not_in(matched_eob_ids_sq))
-                .where(
-                    ~(
-                        (EOB.payment_type == "NON_PAYMENT")
-                        & (EOB.adjusted_amount == 0)
-                    )
-                )
-                .order_by(EOB.payment_date.desc())
-                .offset(skip)
-                .limit(remaining)
-            )
-            before = len(items)
-            for eob in eob_query:
-                items.append(
-                    DashboardPayment(
-                        eob_id=eob.id,
-                        transaction_id=None,
-                        payer_name=eob.payer.name,
-                        payment_number=eob.payment_number,
-                        payment_amount=eob.payment_amount,
-                        adjusted_amount=eob.adjusted_amount,
-                        date=eob.payment_date,
-                        bank_transaction_status="AWAITING",
-                        eob_status="RECEIVED",
-                    )
-                )
-            remaining -= len(items) - before
+        # Sort
+        reverse = sort_order.lower() == "desc"
 
-        # --- Category 3: Unmatched insurance transactions ---
-        cat3_start = matched_count + unmatched_eob_count
-        if offset < cat3_start + unmatched_txn_count and remaining > 0:
-            skip = max(0, offset - cat3_start)
-            txn_query = (
-                BankTransaction.select(BankTransaction, TransactionClassification)
-                .join(TransactionClassification)
-                .where(TransactionClassification.is_insurance == True)  # noqa: E712
-                .where(BankTransaction.id.not_in(matched_txn_ids_sq))
-                .order_by(BankTransaction.received_at.desc())
-                .offset(skip)
-                .limit(remaining)
-            )
-            for bt in txn_query:
-                items.append(
-                    DashboardPayment(
-                        eob_id=None,
-                        transaction_id=bt.id,
-                        payer_name=_infer_payer_name(bt.note),
-                        payment_number=extract_trn_payment_number(bt.note),
-                        payment_amount=None,
-                        adjusted_amount=abs(bt.amount),
-                        date=bt.received_at,
-                        bank_transaction_status="RECEIVED",
-                        eob_status="AWAITING",
-                    )
-                )
+        def _sort_key(p: DashboardPayment):
+            if sort_by == "date":
+                return p.date or datetime.datetime.min
+            if sort_by == "payer":
+                return (p.payer_name or "").lower()
+            if sort_by == "payment_number":
+                return (p.payment_number or "").lower()
+            if sort_by == "amount":
+                return p.adjusted_amount or 0
+            if sort_by == "method":
+                return (p.match_method or "").lower()
+            return p.date or datetime.datetime.min
+
+        items.sort(key=_sort_key, reverse=reverse)
+
+        # Paginate
+        total_count = len(items)
+        start = page * page_size
+        items = items[start : start + page_size]
 
         return PaginatedResult(
             items=items,
@@ -375,4 +363,167 @@ class LiveReconciliationEngine(ReconciliationEngine):
             total_count=total_count,
             page=page,
             page_size=page_size,
+        )
+
+    def manual_reconcile(self, eob_id: int, transaction_id: int) -> int:
+        """Create a manual match between an EOB and a bank transaction.
+
+        Returns the created ReconciliationMatch id.
+        Raises ValueError if IDs are invalid or already matched.
+        """
+        eob = EOB.get_or_none(EOB.id == eob_id)
+        if eob is None:
+            raise ValueError(f"EOB {eob_id} not found")
+
+        bt = BankTransaction.get_or_none(BankTransaction.id == transaction_id)
+        if bt is None:
+            raise ValueError(f"Bank transaction {transaction_id} not found")
+
+        existing_eob_match = ReconciliationMatch.get_or_none(
+            ReconciliationMatch.eob == eob_id
+        )
+        if existing_eob_match is not None:
+            raise ValueError(f"EOB {eob_id} is already matched")
+
+        existing_txn_matches = list(
+            ReconciliationMatch.select().where(
+                ReconciliationMatch.bank_transaction == transaction_id
+            )
+        )
+        if existing_txn_matches:
+            raise ValueError(f"Transaction {transaction_id} is already matched")
+
+        # Transaction must be classified as insurance
+        tc = TransactionClassification.get_or_none(
+            TransactionClassification.bank_transaction == transaction_id
+        )
+        if tc is None or not tc.is_insurance:
+            raise ValueError(
+                f"Transaction {transaction_id} is not classified as insurance"
+            )
+
+        match = ReconciliationMatch.create(
+            eob=eob,
+            bank_transaction=bt,
+            confidence=1.0,
+            match_method="manual",
+            matched_at=datetime.datetime.now(),
+        )
+        return match.id
+
+    def dismiss_item(
+        self, *, eob_id: int | None = None, transaction_id: int | None = None
+    ) -> int:
+        """Mark an unmatched EOB or transaction as dismissed (not reconcilable).
+
+        Exactly one of eob_id or transaction_id must be provided.
+        Returns the created ReconciliationMatch id for EOB dismissals, or 0 for
+        transaction dismissals (which update classification).
+        Raises ValueError if invalid.
+        """
+        if (eob_id is None) == (transaction_id is None):
+            raise ValueError("Exactly one of eob_id or transaction_id must be provided")
+
+        if eob_id is not None:
+            eob = EOB.get_or_none(EOB.id == eob_id)
+            if eob is None:
+                raise ValueError(f"EOB {eob_id} not found")
+            existing = ReconciliationMatch.get_or_none(ReconciliationMatch.eob == eob_id)
+            if existing is not None:
+                raise ValueError(f"EOB {eob_id} is already matched")
+            match = ReconciliationMatch.create(
+                eob=eob,
+                bank_transaction=None,
+                confidence=1.0,
+                match_method="manual_dismiss",
+                matched_at=datetime.datetime.now(),
+            )
+            return match.id
+
+        # transaction_id provided: mark as not insurance so it drops out of reconciliation
+        bt = BankTransaction.get_or_none(BankTransaction.id == transaction_id)
+        if bt is None:
+            raise ValueError(f"Bank transaction {transaction_id} not found")
+        existing = list(
+            ReconciliationMatch.select().where(
+                ReconciliationMatch.bank_transaction == transaction_id
+            )
+        )
+        if existing:
+            raise ValueError(f"Transaction {transaction_id} is already matched")
+
+        tc, _ = TransactionClassification.get_or_create(
+            bank_transaction=bt,
+            defaults={
+                "is_insurance": False,
+                "label": "manual_dismissed",
+                "confidence": 1.0,
+            },
+        )
+        if tc.is_insurance:
+            tc.is_insurance = False
+            tc.label = "manual_dismissed"
+            tc.save()
+        return 0
+
+    def get_stats(self) -> ReconciliationStats:
+        """Return aggregate statistics for classification and reconciliation."""
+        total_transactions = BankTransaction.select().count()
+        classified = TransactionClassification.select()
+        insurance_count = classified.where(
+            TransactionClassification.is_insurance == True  # noqa: E712
+        ).count()
+        not_insurance_count = classified.where(
+            TransactionClassification.is_insurance == False  # noqa: E712
+        ).count()
+        classified_count = insurance_count + not_insurance_count
+        unknown_count = total_transactions - classified_count
+
+        total_eobs = EOB.select().count()
+        matched_count = ReconciliationMatch.select().count()
+        matched_eob_ids_sq = ReconciliationMatch.select(ReconciliationMatch.eob)
+        unmatched_eob_base = (
+            EOB.select()
+            .where(EOB.id.not_in(matched_eob_ids_sq))
+            .where(
+                ~(
+                    (EOB.payment_type == "NON_PAYMENT") & (EOB.adjusted_amount == 0)
+                )
+            )
+        )
+        unmatched_eob_count = unmatched_eob_base.count()
+
+        matched_txn_ids_sq = ReconciliationMatch.select(
+            ReconciliationMatch.bank_transaction
+        )
+        unmatched_txn_base = (
+            BankTransaction.select()
+            .join(TransactionClassification)
+            .where(TransactionClassification.is_insurance == True)  # noqa: E712
+            .where(BankTransaction.id.not_in(matched_txn_ids_sq))
+        )
+        unmatched_txn_count = unmatched_txn_base.count()
+
+        match_by_method: dict[str, int] = {}
+        for row in ReconciliationMatch.select(ReconciliationMatch.match_method).tuples():
+            method = row[0]
+            match_by_method[method] = match_by_method.get(method, 0) + 1
+
+        manual_match_count = match_by_method.get("manual", 0) + match_by_method.get(
+            "manual_dismiss", 0
+        )
+        auto_match_count = matched_count - manual_match_count
+
+        return ReconciliationStats(
+            total_transactions=total_transactions,
+            insurance_count=insurance_count,
+            not_insurance_count=not_insurance_count,
+            unknown_count=max(0, unknown_count),
+            total_eobs=total_eobs,
+            matched_count=matched_count,
+            unmatched_eob_count=unmatched_eob_count,
+            unmatched_txn_count=unmatched_txn_count,
+            manual_match_count=manual_match_count,
+            auto_match_count=auto_match_count,
+            match_by_method=match_by_method,
         )

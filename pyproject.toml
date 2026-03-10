@@ -30,6 +30,7 @@ dev = [
 test = "pytest tests/ -v"
 dashboard = "uvicorn bank_reconciliation.dashboard:app --reload"
 cli = "python -m bank_reconciliation.cli"
+pipeline = "python -m bank_reconciliation.cli run:pipeline"
 "db:build" = "python -m internal.scripts.build_local_dbs"
 bundle = "python -m internal.scripts.build_candidate_zip"
 lint = "ruff check ."

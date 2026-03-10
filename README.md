@@ -274,11 +274,25 @@ uv run poe dashboard
 
 # Run tests
 uv run poe test
+
+# Run full pipeline (classify → reconcile) on all data
+uv run poe pipeline
 ```
 
 ### CLI
 
 ```bash
+# Run full pipeline on all data (classify → reconcile)
+uv run poe pipeline
+# or with options:
+uv run poe cli run:pipeline --no-llm --overwrite
+
+# Run pipeline without LLM (faster, rule-based only)
+uv run poe cli run:pipeline --no-llm
+
+# Reclassify from scratch
+uv run poe cli run:pipeline --overwrite
+
 # List dashboard payments (matched pairs, unmatched EOBs, unmatched transactions)
 uv run poe cli list:payments --page 1 --page-size 20
 
@@ -289,7 +303,9 @@ uv run poe cli list:missing-transactions --page 1 --page-size 10
 uv run poe cli list:missing-payment-eob --page 1 --page-size 15
 ```
 
-| Flag          | Default | Description                |
-| ------------- | ------- | -------------------------- |
-| `--page`      | `1`     | Page number (1-indexed)    |
-| `--page-size` | `20`    | Number of results per page |
+| Flag          | Default | Description                                      |
+| ------------- | ------- | ------------------------------------------------ |
+| `--page`      | `1`     | Page number (1-indexed)                          |
+| `--page-size` | `20`    | Number of results per page                       |
+| `--no-llm`    | `false` | Skip LLM for unknowns (rule-based only, faster)  |
+| `--overwrite`  | `false` | Reclassify all transactions from scratch         |
