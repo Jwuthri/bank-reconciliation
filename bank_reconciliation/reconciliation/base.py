@@ -7,6 +7,14 @@ from .models import (
 
 
 class ReconciliationEngine:
+    def run_matching(self, **kwargs) -> dict[str, int]:
+        """Run the classify → match pipeline and persist results.
+
+        Default no-op for engines that do not support matching.
+        Returns empty stats dict.
+        """
+        return {}
+
     def get_dashboard_payments(
         self, page: int = 0, page_size: int = 20
     ) -> PaginatedResult[DashboardPayment]:

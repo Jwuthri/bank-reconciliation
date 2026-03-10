@@ -15,7 +15,7 @@ from bank_reconciliation.db.models import (
     TransactionClassification,
 )
 from bank_reconciliation.reconciliation.matchers import (
-    DEFAULT_PAYER_NOTE_MAP,
+    build_payer_note_map_from_db,
     extract_trn_payment_number,
 )
 
@@ -62,6 +62,7 @@ def main() -> None:
 
         eobs = list(EOB.select())
         payers = {p.id: p for p in Payer.select()}
+        payer_note_map = build_payer_note_map_from_db(list(Payer.select()))
         eob_by_payment_num = {e.payment_number: e for e in eobs if e.payment_number}
         eob_by_payer_amount: dict[tuple[int, int], list[EOB]] = defaultdict(list)
         for e in eobs:
@@ -157,7 +158,7 @@ def main() -> None:
 
         for t in no_trn:
             payer_id = None
-            for pid, pattern in DEFAULT_PAYER_NOTE_MAP.items():
+            for pid, pattern in payer_note_map.items():
                 if pattern in (t.note or ""):
                     payer_id = pid
                     break
@@ -226,7 +227,7 @@ def main() -> None:
         for pid, count in payer_eob_counts.most_common():
             p = payers.get(pid)
             name = p.name if p else "?"
-            in_map = "YES" if pid in DEFAULT_PAYER_NOTE_MAP else "NO"
+            in_map = "YES" if pid in payer_note_map else "NO"
             print(f"   {name} (id={pid}): {count} EOBs, in payer_note_map: {in_map}")
 
         # 8. Check for payers in notes we're not mapping
@@ -239,7 +240,7 @@ def main() -> None:
         print("\n8. PAYER NAMES FOUND IN UNMATCHED NOTES:")
         for name, count in note_substrings.most_common(15):
             pid = next((k for k, v in payers.items() if v.name == name), None)
-            in_map = "YES" if pid and pid in DEFAULT_PAYER_NOTE_MAP else "NO"
+            in_map = "YES" if pid and pid in payer_note_map else "NO"
             print(f"   {name}: {count} occurrences, in map: {in_map}")
 
     finally:

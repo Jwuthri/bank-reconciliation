@@ -311,7 +311,7 @@ class TestPayerAmountDateMatcher:
     ) -> PayerAmountDateMatcher:
         return PayerAmountDateMatcher(
             eobs,
-            payer_note_map=payer_note_map or self.PAYER_NOTE_MAP,
+            payer_note_map=payer_note_map if payer_note_map is not None else self.PAYER_NOTE_MAP,
             date_window_days=date_window_days,
         )
 

@@ -13,10 +13,7 @@ from bank_reconciliation.db.models import (
     ReconciliationMatch,
     TransactionClassification,
 )
-from bank_reconciliation.reconciliation.matchers import (
-    DEFAULT_PAYER_NOTE_MAP,
-    extract_trn_payment_number,
-)
+from bank_reconciliation.reconciliation.matchers import extract_trn_payment_number
 
 import re
 

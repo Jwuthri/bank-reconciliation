@@ -22,6 +22,8 @@ from bank_reconciliation.db.models import (
 )
 from bank_reconciliation.reconciliation.classifier import classify_all
 from bank_reconciliation.reconciliation.matchers import (
+    MatchResult,
+    Matcher,
     PayerAmountDateMatcher,
     PaymentNumberMatcher,
     build_payer_note_map_from_db,
@@ -38,38 +40,21 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-_PAYER_PATTERNS: list[tuple[str, str]] = [
-    ("MetLife", "MetLife"),
-    ("CALIFORNIA DENTA", "California Dental"),
-    ("Guardian Life", "Guardian"),
-]
-
-_HCCLAIMPMT_PAYER_CODES: dict[str, str | None] = {
-    "UHCDComm": "UnitedHealthcare",
-    "PAY PLUS": "Anthem/Cigna",
-    "DELTADENTALCA": "Delta Dental",
-    "DELTADNTLINS": "Delta Dental",
-    "DELTADIC-FEDVIP": "Delta Dental",
-    "HUMANA": "Humana",
-    "GEHA": "GEHA",
-    "CIGNA": "Cigna",
-    "ANTHEM": "Anthem",
-    "UMR": "UMR",
-    "DDPAR": "Delta Dental",
-    "DENTEGRA": "Ameritas/Dentegra",
-    "HNB - ECHO": None,
-    "PNC-ECHO": None,
-}
-
 
 def _infer_payer_name(note: str | None) -> str | None:
+    """Infer display name for payer from bank transaction note."""
+    from bank_reconciliation.reconciliation.payer_registry import (
+        HCCLAIMPMT_PAYER_CODES,
+        NOTE_PATTERN_TO_DISPLAY_NAME,
+    )
+
     if not note:
         return None
-    for pattern, name in _PAYER_PATTERNS:
+    for pattern, name in NOTE_PATTERN_TO_DISPLAY_NAME.items():
         if pattern in note:
             return name
     if "HCCLAIMPMT" in note:
-        for code, payer in _HCCLAIMPMT_PAYER_CODES.items():
+        for code, payer in HCCLAIMPMT_PAYER_CODES.items():
             if code in note:
                 return payer
         return "HCCLAIMPMT"
@@ -115,30 +100,26 @@ class LiveReconciliationEngine(ReconciliationEngine):
             if row.bank_transaction_id is not None
         }
 
-        # Matcher 1: payment number
-        pn_matcher = PaymentNumberMatcher(eobs)
-        pn_results = pn_matcher.match(
-            insurance_txns,
-            already_matched_eob_ids=already_matched_eob_ids,
-            already_matched_txn_ids=already_matched_txn_ids,
-        )
-
-        for mr in pn_results:
-            already_matched_eob_ids.add(mr.eob_id)
-            already_matched_txn_ids.add(mr.bank_transaction_id)
-
-        # Matcher 2: payer + amount + date
+        # Run matchers in order; each matcher sees results from previous ones
         payer_note_map = build_payer_note_map_from_db(list(Payer.select()))
-        pad_matcher = PayerAmountDateMatcher(
-            eobs, payer_note_map=payer_note_map, date_window_days=5
-        )
-        pad_results = pad_matcher.match(
-            insurance_txns,
-            already_matched_eob_ids=already_matched_eob_ids,
-            already_matched_txn_ids=already_matched_txn_ids,
-        )
+        matchers: list[Matcher] = [
+            PaymentNumberMatcher(eobs),
+            PayerAmountDateMatcher(
+                eobs, payer_note_map=payer_note_map, date_window_days=5
+            ),
+        ]
 
-        all_results = pn_results + pad_results
+        all_results: list[MatchResult] = []
+        for matcher in matchers:
+            results = matcher.match(
+                insurance_txns,
+                already_matched_eob_ids=already_matched_eob_ids,
+                already_matched_txn_ids=already_matched_txn_ids,
+            )
+            for mr in results:
+                already_matched_eob_ids.add(mr.eob_id)
+                already_matched_txn_ids.add(mr.bank_transaction_id)
+            all_results.extend(results)
         now = datetime.datetime.now()
 
         if all_results:
@@ -161,11 +142,14 @@ class LiveReconciliationEngine(ReconciliationEngine):
             {row.eob_id for row in ReconciliationMatch.select(ReconciliationMatch.eob)}
         ) - len(all_results)
 
+        method_counts: dict[str, int] = {}
+        for mr in all_results:
+            method_counts[mr.match_method] = method_counts.get(mr.match_method, 0) + 1
         logger.info(
             "Matching complete: %d new matches (%d payment_number, %d payer_amount_date)",
             len(all_results),
-            len(pn_results),
-            len(pad_results),
+            method_counts.get("payment_number", 0),
+            method_counts.get("payer_amount_date", 0),
         )
         return stats
 
