@@ -1,0 +1,60 @@
+---
+description: Enforce Test-Driven Development (TDD) workflow
+alwaysApply: true
+---
+
+# TDD Workflow
+
+Follow Test-Driven Development: write tests first, then implement.
+
+## Red-Green-Refactor Cycle
+
+1. **Red**: Write a failing test that defines the desired behavior
+2. **Green**: Write the minimal code to make the test pass
+3. **Refactor**: Improve the implementation while keeping tests green
+
+## When Adding New Features
+
+- **Before** writing production code, write the test(s) that specify the behavior
+- Run tests to confirm they fail (Red)
+- Implement until tests pass (Green)
+- Refactor if needed
+
+## When Fixing Bugs
+
+- **First** write a test that reproduces the bug (it should fail)
+- Then fix the code so the test passes
+
+## Example (Python)
+
+```python
+# 1. RED: Write test first (in tests/unit/test_feature.py)
+def test_classify_transaction_returns_category():
+    classifier = TransactionClassifier()
+    result = classifier.classify(amount=-50.0, description="Coffee shop")
+    assert result == "food"
+
+# 2. GREEN: Implement minimal code (in classifier.py)
+def classify(self, amount: float, description: str) -> str:
+    return "food"  # minimal to pass
+
+# 3. REFACTOR: Improve implementation
+```
+
+## Example (TypeScript)
+
+```typescript
+// 1. RED: Write test first
+it('formats currency with 2 decimals', () => {
+  expect(formatCurrency(1234.5)).toBe('1,234.50')
+})
+
+// 2. GREEN: Implement
+// 3. REFACTOR
+```
+
+## Do Not
+
+- Write implementation before tests for new behavior
+- Skip the Red phase (verify the test fails before implementing)
+- Add production code without a failing test to drive it

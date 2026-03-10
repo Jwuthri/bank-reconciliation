@@ -60,6 +60,7 @@ RULES: list[_Rule] = [
     _noise(r"PAYROLL|TD PAYROLL", "payroll"),
     _noise(r"\brent\b", "rent"),
     _noise(r"PAYMENT TO COMMERCIAL LOAN|LOAN PAYMENT", "loan"),
+    _noise(r"Service Charge Rebate", "service_charge_rebate"),
     _noise(r"SERVICE CHARGE", "service_charge"),
     _noise(r"FeeTransfer", "fee_transfer"),
     _noise(r"HARTFORD", "hartford_insurance"),
@@ -81,7 +82,6 @@ RULES: list[_Rule] = [
     _noise(r"\bDMV\b", "dmv"),
     _noise(r"CARD PROCESSING", "card_processing"),
     _noise(r"VENDOR.*SALE", "vendor_sale"),
-    _noise(r"Service Charge Rebate", "service_charge_rebate"),
 ]
 
 
@@ -123,23 +123,16 @@ Your job: decide whether a transaction note represents an **insurance payment**
 (money coming from an insurance company to pay dental claims) or **not insurance**
 (payroll, rent, supplies, card processing, patient payments, fees, etc.).
 
-Respond with ONLY a JSON array of booleans, one per transaction, in the same
-order as the input. true = insurance, false = not insurance.
+Respond with ONLY a JSON object: {"insurance": true} or {"insurance": false}.
 
-Example input:
-["DELTA DENTAL MA PAYMENT 5803916", "Cherry Funding 2267716", "CHECK 5129", "REMOTE DEPOSIT CAPTURE"]
-
-Example output:
-[true, false, false, false]
-
-More examples of INSURANCE (true):
+Examples of INSURANCE (true):
 - "DELTA DENTAL MA PAYMENT 5803916" — Delta Dental paying a claim
+- "DirPay DELTA DENTAL IL TRN*1*071001733586696*1362612058\\" — direct-pay insurance
 - "AMERITAS LIFE PAYMENT 123456" — Ameritas insurance payment
 - "UNITED CONCORDIA DNTL CLAIM" — dental insurance claim payment
 - "PRINCIPAL LIFE DENTAL PMT" — Principal insurance payment
-- "REMOTE DEPOSIT CAPTURE" with a negative amount could be a scanned insurance check, but without more context default to false
 
-More examples of NOT INSURANCE (false):
+Examples of NOT INSURANCE (false):
 - "CHECK 5129" — practice writing a check (outgoing)
 - "Cherry Funding 2267716" — patient financing company
 - "DEPOSIT" — generic deposit, not identifiable as insurance
@@ -148,42 +141,36 @@ More examples of NOT INSURANCE (false):
 - "RONSMEDICALGASES PURCHASE" — medical supply purchase
 - "SMC TAX ECHECK TAX COLL." — tax payment
 - "DCM DSO LLC ACCTVERIFY" — account verification, not insurance
-- "Remote Deposit Capture Refund - Multi" — refund, not insurance payment\
+- "Remote Deposit Capture Refund - Multi" — refund, not insurance payment
+- "Bill.com DCM DSO LLC" — vendor invoice payment
+- "Outgoing Wire Fee" — bank fee
+- "GCADMIN NETWO" — admin/network vendor\
 """
 
 _LLM_MODEL = "gpt-5-mini"
-_LLM_BATCH_SIZE = 40  # notes per API call (fits comfortably in context)
-_LLM_MAX_CONCURRENT = 5
+_LLM_MAX_CONCURRENT = 8
 
 
-async def _call_openai(notes: list[str], client: object) -> list[bool]:
-    """Send a batch of notes to OpenAI and return boolean classifications."""
-    user_content = json.dumps(notes)
+async def _call_openai_single(
+    note: str, client: object
+) -> bool:
+    """Send a single note to OpenAI and return True if insurance."""
     response = await client.chat.completions.create(  # type: ignore[union-attr]
         model=_LLM_MODEL,
-        temperature=0,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": _LLM_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
+            {"role": "user", "content": note},
         ],
     )
     raw = response.choices[0].message.content
     parsed = json.loads(raw)  # type: ignore[arg-type]
 
-    # The model might wrap the array in an object like {"results": [...]}
-    if isinstance(parsed, dict):
-        parsed = next(v for v in parsed.values() if isinstance(v, list))
+    if isinstance(parsed, dict) and "insurance" in parsed:
+        return bool(parsed["insurance"])
 
-    if not isinstance(parsed, list) or len(parsed) != len(notes):
-        logger.warning(
-            "LLM returned %d results for %d notes; falling back to all-false",
-            len(parsed) if isinstance(parsed, list) else -1,
-            len(notes),
-        )
-        return [False] * len(notes)
-
-    return [bool(v) for v in parsed]
+    logger.warning("LLM returned unexpected format for %r: %s", note, raw)
+    return False
 
 
 async def _classify_unknowns_with_llm(
@@ -191,6 +178,7 @@ async def _classify_unknowns_with_llm(
 ) -> dict[int, bool]:
     """Classify a list of (txn_id, note) pairs via the OpenAI API.
 
+    One API call per note, scaled with concurrency.
     Returns a mapping of txn_id -> is_insurance.
     """
     try:
@@ -201,10 +189,17 @@ async def _classify_unknowns_with_llm(
         )
         return {}
 
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         logger.error(
-            "OPENAI_API_KEY not set — skipping LLM classification"
+            "OPENAI_API_KEY not set — add it to .env or export it"
         )
         return {}
 
@@ -212,22 +207,14 @@ async def _classify_unknowns_with_llm(
     results: dict[int, bool] = {}
     semaphore = asyncio.Semaphore(_LLM_MAX_CONCURRENT)
 
-    async def _process_batch(batch: list[tuple[int, str]]) -> None:
-        ids = [b[0] for b in batch]
-        notes = [b[1] for b in batch]
+    async def _classify_one(txn_id: int, note: str) -> None:
         async with semaphore:
             try:
-                bools = await _call_openai(notes, client)
-                for txn_id, is_ins in zip(ids, bools):
-                    results[txn_id] = is_ins
+                results[txn_id] = await _call_openai_single(note, client)
             except Exception:
-                logger.exception("LLM batch failed for %d notes", len(notes))
+                logger.exception("LLM call failed for txn %d: %r", txn_id, note)
 
-    tasks = []
-    for i in range(0, len(unknowns), _LLM_BATCH_SIZE):
-        tasks.append(_process_batch(unknowns[i : i + _LLM_BATCH_SIZE]))
-
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*[_classify_one(tid, n) for tid, n in unknowns])
     return results
 
 
@@ -241,6 +228,7 @@ def classify_all(
     *,
     use_llm: bool = False,
     batch_size: int = 500,
+    overwrite: bool = False,
 ) -> dict[str, int]:
     """Classify every bank transaction and persist to TransactionClassification.
 
@@ -248,13 +236,14 @@ def classify_all(
       1. Rule-based: instant, covers ~87% of transactions.
       2. LLM (opt-in): sends "unknown" notes to gpt-5-mini for a second opinion.
 
-    Existing classifications are skipped (idempotent).
+    Existing classifications are skipped (idempotent) unless overwrite=True.
 
     Args:
         transactions: Optional explicit list; if *None*, queries all rows.
         use_llm: If True, run unknown transactions through the LLM stage.
                  Requires ``openai`` package and ``OPENAI_API_KEY`` env var.
         batch_size: Insert batch size for bulk writes.
+        overwrite: If True, delete all existing classifications before running.
 
     Returns:
         Summary counts keyed by label.
@@ -262,14 +251,19 @@ def classify_all(
     if transactions is None:
         transactions = list(BankTransaction.select())
 
-    already_classified: set[int] = {
-        row[0]
-        for row in TransactionClassification.select(
-            TransactionClassification.bank_transaction
-        )
-        .tuples()
-        .iterator()
-    }
+    if overwrite:
+        deleted = TransactionClassification.delete().execute()
+        logger.info("Overwrite: deleted %d existing classifications", deleted)
+        already_classified: set[int] = set()
+    else:
+        already_classified = {
+            row[0]
+            for row in TransactionClassification.select(
+                TransactionClassification.bank_transaction
+            )
+            .tuples()
+            .iterator()
+        }
 
     rows_to_insert: list[dict] = []
     unknowns: list[tuple[int, str]] = []  # (txn_id, note) for LLM stage
@@ -326,3 +320,131 @@ def classify_all(
         counts,
     )
     return counts
+
+
+# Labels considered insurance (rule-based + LLM)
+_INSURANCE_LABELS = frozenset(
+    {"HCCLAIMPMT", "MetLife", "CALIFORNIA_DENTA", "Guardian", "llm_insurance"}
+)
+
+
+def _print_dashboard(counts: dict[str, int]) -> None:
+    """Print a Rich dashboard with classification summary."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    console = Console()
+    total = sum(counts.values())
+    if total == 0:
+        console.print("[dim]No transactions classified.[/]")
+        return
+
+    insurance = sum(counts.get(lbl, 0) for lbl in _INSURANCE_LABELS)
+    unknown = counts.get("unknown", 0)
+    llm_not = counts.get("llm_not_insurance", 0)
+    other = total - insurance - unknown - llm_not
+
+    # Summary table
+    summary = Table(
+        title="Classification Dashboard",
+        show_header=True,
+        header_style="bold cyan",
+        expand=True,
+    )
+    summary.add_column("Category", style="bold")
+    summary.add_column("Count", justify="right")
+    summary.add_column("%", justify="right")
+    summary.add_column("Bar", ratio=1)
+
+    def _row(cat: str, n: int, style: str = "") -> None:
+        pct = n / total * 100 if total else 0
+        bar_len = max(0, int(pct / 2))
+        bar = "█" * bar_len
+        summary.add_row(cat, f"{n:,}", f"{pct:.1f}%", f"[{style}]{bar}[/]")
+
+    _row("Insurance", insurance, "green")
+    _row("Unknown", unknown, "yellow")
+    _row("LLM (not insurance)", llm_not, "dim")
+    _row("Other (noise)", other, "red")
+    summary.add_row("", "", "", "", style="dim")
+    _row("Total", total, "bold")
+
+    console.print()
+    console.print(Panel(summary, border_style="blue"))
+    console.print()
+
+    # Label breakdown table
+    breakdown = Table(
+        title="By Label",
+        show_header=True,
+        header_style="bold cyan",
+        expand=True,
+    )
+    breakdown.add_column("Label", style="bold")
+    breakdown.add_column("Count", justify="right")
+    breakdown.add_column("%", justify="right")
+
+    for label in sorted(counts.keys(), key=lambda k: -counts[k]):
+        n = counts[label]
+        pct = n / total * 100 if total else 0
+        lbl_text = Text(label)
+        if label in _INSURANCE_LABELS:
+            lbl_text.stylize("green")
+        elif label == "unknown":
+            lbl_text.stylize("yellow")
+        breakdown.add_row(lbl_text, f"{n:,}", f"{pct:.1f}%")
+
+    console.print(Panel(breakdown, border_style="blue"))
+    console.print()
+
+
+def main() -> None:
+    """CLI entrypoint: classify all bank transactions and persist to DB."""
+    import argparse
+
+    from bank_reconciliation.db.database import db
+    from bank_reconciliation.db.init_db import init_db
+
+    parser = argparse.ArgumentParser(
+        description="Classify bank transactions (insurance vs not) and persist to DB.",
+    )
+    parser.add_argument(
+        "--llm",
+        action="store_true",
+        help="Run unknowns through the LLM stage (requires OPENAI_API_KEY).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=500,
+        help="Insert batch size for bulk writes (default: 500).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Delete existing classifications and reclassify all transactions.",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+    db.connect()
+    try:
+        init_db()
+        counts = classify_all(
+            use_llm=args.llm,
+            batch_size=args.batch_size,
+            overwrite=args.overwrite,
+        )
+        _print_dashboard(counts)
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
