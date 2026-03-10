@@ -46,6 +46,7 @@ class TestInsuranceRules:
         result = classify_transaction(note)
         assert result.is_insurance is True
         assert result.label == expected_label
+        assert result.confidence == 1.0
 
     def test_metlife_exact(self):
         result = classify_transaction("MetLife")
@@ -142,6 +143,7 @@ class TestNoiseRules:
             f"Expected noise for {note!r}, got insurance"
         )
         assert result.label == expected_label
+        assert result.confidence == 1.0
 
     def test_rent_word_boundary(self):
         """'rent' should match as a word, not as a substring."""
@@ -165,10 +167,12 @@ class TestEdgeCases:
     def test_none_note(self):
         result = classify_transaction(None)
         assert result == Classification(is_insurance=False, label="empty_note")
+        assert result.confidence == 1.0
 
     def test_empty_string(self):
         result = classify_transaction("")
         assert result == Classification(is_insurance=False, label="empty_note")
+        assert result.confidence == 1.0
 
     @pytest.mark.parametrize(
         "note",
@@ -189,6 +193,7 @@ class TestEdgeCases:
         result = classify_transaction(note)
         assert result.is_insurance is False
         assert result.label == "unknown"
+        assert result.confidence == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -236,3 +241,45 @@ class TestClassificationDataclass:
         a = Classification(is_insurance=True, label="x")
         b = Classification(is_insurance=False, label="x")
         assert a != b
+
+    def test_confidence_default(self):
+        c = Classification(is_insurance=True, label="test")
+        assert c.confidence == 1.0
+
+    def test_confidence_explicit(self):
+        c = Classification(is_insurance=False, label="unknown", confidence=0.0)
+        assert c.confidence == 0.0
+
+    def test_inequality_by_confidence(self):
+        a = Classification(is_insurance=False, label="unknown", confidence=0.0)
+        b = Classification(is_insurance=False, label="unknown", confidence=1.0)
+        assert a != b
+
+
+# ---------------------------------------------------------------------------
+# Confidence values
+# ---------------------------------------------------------------------------
+
+
+class TestConfidence:
+    def test_rule_match_has_full_confidence(self):
+        result = classify_transaction("HCCLAIMPMT something")
+        assert result.confidence == 1.0
+
+    def test_noise_match_has_full_confidence(self):
+        result = classify_transaction("PAYROLL John Doe")
+        assert result.confidence == 1.0
+
+    def test_empty_note_has_full_confidence(self):
+        result = classify_transaction(None)
+        assert result.confidence == 1.0
+
+    def test_unknown_has_zero_confidence(self):
+        result = classify_transaction("DEPOSIT")
+        assert result.confidence == 0.0
+
+    def test_unknown_has_zero_confidence_various(self):
+        for note in ["CHECK 5129", "Cherry Funding 2267716", "REMOTE DEPOSIT CAPTURE"]:
+            result = classify_transaction(note)
+            assert result.label == "unknown"
+            assert result.confidence == 0.0

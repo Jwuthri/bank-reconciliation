@@ -21,7 +21,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Literal, Sequence
 
 from bank_reconciliation.db.models import BankTransaction, TransactionClassification
 
@@ -94,6 +94,7 @@ RULES: list[_Rule] = [
 class Classification:
     is_insurance: bool
     label: str
+    confidence: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +111,7 @@ def classify_transaction(note: str | None) -> Classification:
         if rule.pattern.search(note):
             return Classification(is_insurance=rule.is_insurance, label=rule.label)
 
-    return Classification(is_insurance=False, label="unknown")
+    return Classification(is_insurance=False, label="unknown", confidence=0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +230,7 @@ def classify_all(
     use_llm: bool = False,
     batch_size: int = 500,
     overwrite: bool = False,
+    mode: Literal["precision", "recall"] = "precision",
 ) -> dict[str, int]:
     """Classify every bank transaction and persist to TransactionClassification.
 
@@ -244,6 +246,9 @@ def classify_all(
                  Requires ``openai`` package and ``OPENAI_API_KEY`` env var.
         batch_size: Insert batch size for bulk writes.
         overwrite: If True, delete all existing classifications before running.
+        mode: "precision" keeps unknowns as not-insurance (confidence=0).
+              "recall" marks unknowns as insurance (confidence=0) to avoid
+              missing potential insurance transactions.
 
     Returns:
         Summary counts keyed by label.
@@ -252,8 +257,10 @@ def classify_all(
         transactions = list(BankTransaction.select())
 
     if overwrite:
-        deleted = TransactionClassification.delete().execute()
-        logger.info("Overwrite: deleted %d existing classifications", deleted)
+        db = TransactionClassification._meta.database
+        db.drop_tables([TransactionClassification])
+        db.create_tables([TransactionClassification])
+        logger.info("Overwrite: dropped and recreated transaction_classifications")
         already_classified: set[int] = set()
     else:
         already_classified = {
@@ -279,11 +286,18 @@ def classify_all(
             unknowns.append((txn.id, txn.note))
             continue
 
+        is_insurance = result.is_insurance
+        confidence = result.confidence
+
+        if result.label == "unknown" and mode == "recall":
+            is_insurance = True
+
         rows_to_insert.append(
             {
                 "bank_transaction": txn.id,
-                "is_insurance": result.is_insurance,
+                "is_insurance": is_insurance,
                 "label": result.label,
+                "confidence": confidence,
             }
         )
         counts[result.label] = counts.get(result.label, 0) + 1
@@ -301,6 +315,7 @@ def classify_all(
                     "bank_transaction": txn_id,
                     "is_insurance": is_ins,
                     "label": label,
+                    "confidence": 0.5,
                 }
             )
             counts[label] = counts.get(label, 0) + 1
@@ -314,9 +329,10 @@ def classify_all(
                 ).execute()
 
     logger.info(
-        "Classified %d new transactions (%d skipped): %s",
+        "Classified %d new transactions (%d skipped, mode=%s): %s",
         len(rows_to_insert),
         len(already_classified),
+        mode,
         counts,
     )
     return counts
@@ -328,7 +344,7 @@ _INSURANCE_LABELS = frozenset(
 )
 
 
-def _print_dashboard(counts: dict[str, int]) -> None:
+def _print_dashboard(counts: dict[str, int], *, mode: str = "precision") -> None:
     """Print a Rich dashboard with classification summary."""
     from rich.console import Console
     from rich.panel import Panel
@@ -346,9 +362,15 @@ def _print_dashboard(counts: dict[str, int]) -> None:
     llm_not = counts.get("llm_not_insurance", 0)
     other = total - insurance - unknown - llm_not
 
+    high_conf = total - unknown  # rule-matched + LLM = confidence > 0
+    low_conf = unknown           # unknowns = confidence 0
+
+    mode_color = "green" if mode == "recall" else "cyan"
+    mode_label = f"[{mode_color} bold]{mode.upper()}[/]"
+
     # Summary table
     summary = Table(
-        title="Classification Dashboard",
+        title=f"Classification Dashboard  (mode: {mode_label})",
         show_header=True,
         header_style="bold cyan",
         expand=True,
@@ -375,6 +397,36 @@ def _print_dashboard(counts: dict[str, int]) -> None:
     console.print(Panel(summary, border_style="blue"))
     console.print()
 
+    # Confidence breakdown
+    conf_table = Table(
+        title="Confidence Breakdown",
+        show_header=True,
+        header_style="bold cyan",
+        expand=True,
+    )
+    conf_table.add_column("Confidence", style="bold")
+    conf_table.add_column("Count", justify="right")
+    conf_table.add_column("%", justify="right")
+    conf_table.add_column("Description")
+
+    high_pct = high_conf / total * 100 if total else 0
+    low_pct = low_conf / total * 100 if total else 0
+    conf_table.add_row(
+        "[green]1.0[/]", f"{high_conf:,}", f"{high_pct:.1f}%",
+        "Rule-matched (certain)",
+    )
+    unknown_desc = (
+        "Unknown → treated as insurance" if mode == "recall"
+        else "Unknown → treated as NOT insurance"
+    )
+    conf_table.add_row(
+        "[yellow]0.0[/]", f"{low_conf:,}", f"{low_pct:.1f}%",
+        unknown_desc,
+    )
+
+    console.print(Panel(conf_table, border_style="blue"))
+    console.print()
+
     # Label breakdown table
     breakdown = Table(
         title="By Label",
@@ -385,6 +437,7 @@ def _print_dashboard(counts: dict[str, int]) -> None:
     breakdown.add_column("Label", style="bold")
     breakdown.add_column("Count", justify="right")
     breakdown.add_column("%", justify="right")
+    breakdown.add_column("Confidence", justify="center")
 
     for label in sorted(counts.keys(), key=lambda k: -counts[k]):
         n = counts[label]
@@ -394,10 +447,12 @@ def _print_dashboard(counts: dict[str, int]) -> None:
             lbl_text.stylize("green")
         elif label == "unknown":
             lbl_text.stylize("yellow")
-        breakdown.add_row(lbl_text, f"{n:,}", f"{pct:.1f}%")
+        conf_str = "[yellow]0.0[/]" if label == "unknown" else "[green]1.0[/]"
+        breakdown.add_row(lbl_text, f"{n:,}", f"{pct:.1f}%", conf_str)
 
     console.print(Panel(breakdown, border_style="blue"))
     console.print()
+
 
 
 def main() -> None:
@@ -426,6 +481,15 @@ def main() -> None:
         action="store_true",
         help="Delete existing classifications and reclassify all transactions.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["precision", "recall"],
+        default="precision",
+        help=(
+            "precision: unknowns are NOT insurance (default). "
+            "recall: unknowns ARE insurance (to avoid missing any)."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -440,8 +504,9 @@ def main() -> None:
             use_llm=args.llm,
             batch_size=args.batch_size,
             overwrite=args.overwrite,
+            mode=args.mode,
         )
-        _print_dashboard(counts)
+        _print_dashboard(counts, mode=args.mode)
     finally:
         db.close()
 

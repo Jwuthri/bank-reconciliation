@@ -56,6 +56,7 @@ class TransactionClassification(BaseModel):
     )
     is_insurance = BooleanField()
     label = CharField(null=True)  # e.g. "HCCLAIMPMT", "MetLife", "noise"
+    confidence = FloatField(default=1.0)  # 0.0–1.0
 
     class Meta:
         table_name = "transaction_classifications"

@@ -6,8 +6,7 @@ from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 
-from .reconciliation import ReconciliationEngine
-from .reconciliation.dummy_engine import DummyReconciliationEngine
+from .reconciliation import LiveReconciliationEngine, ReconciliationEngine
 
 
 def format_currency(cents: int | None) -> str:
@@ -158,8 +157,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    # Initialize engine
-    engine = DummyReconciliationEngine()
+    engine = LiveReconciliationEngine()
 
     # Route to handler
     if args.command == "list:payments":
