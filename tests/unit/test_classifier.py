@@ -135,6 +135,18 @@ class TestNoiseRules:
             ("CARD PROCESSING FEE", "card_processing"),
             ("VENDOR/SALE DENTAL SUPPLY", "vendor_sale"),
             ("Service Charge Rebate", "service_charge_rebate"),
+            ("BKCD PROCESSING SETTLEMENT 115660001089288", "bkcd_processing"),
+            ("BKCD PROCESSING", "bkcd_processing"),
+            ("RETURNED DEPOSIT ITEM", "returned_deposit"),
+            ("CHECK 5129", "check_written"),
+            ("CHECK 1234", "check_written"),
+            ("Bill.com DCM DSO LLC", "billcom"),
+            ("Bill.com payment", "billcom"),
+            ("Cherry Funding 2267716", "cherry_funding"),
+            ("Cherry", "cherry_funding"),
+            ("Outgoing Wire Fee", "wire_fee"),
+            ("REMOTE DEPOSIT CAPTURE", "remote_deposit"),
+            ("Remote Deposit Capture Refund - Multi", "remote_deposit"),
         ],
     )
     def test_noise_patterns(self, note: str, expected_label: str):

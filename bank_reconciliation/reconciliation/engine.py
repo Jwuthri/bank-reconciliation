@@ -82,7 +82,7 @@ class LiveReconciliationEngine(ReconciliationEngine):
     def run_matching(
         self,
         *,
-        use_llm: bool = False,
+        use_llm: bool = True,
         mode: Literal["precision", "recall"] = "precision",
     ) -> dict[str, int]:
         """Run the full classify → match pipeline and persist results.

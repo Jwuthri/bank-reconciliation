@@ -33,9 +33,9 @@ Given a transaction note (e.g. `"DELTA DENTAL MA PAYMENT 5803916"`), the classif
 - **Noise rules** next (negative signals): payroll, rent, card settlement, fees, etc.
 - **Result**: definitive label + `confidence=1.0` — no DB, no API, pure function
 
-### Stage 2: LLM Fallback (Opt-In) 🤖
+### Stage 2: LLM Fallback (Default) 🤖
 
-- Only runs when `use_llm=True` and the transaction is still **unknown**
+- Runs by default when the transaction is **unknown**; pass `use_llm=False` to disable
 - Sends note text to **OpenAI gpt-5-mini** with few-shot examples
 - Returns `{"insurance": true}` or `{"insurance": false}`
 - **Labels**: `llm_insurance` or `llm_not_insurance` with `confidence=0.5`
@@ -80,7 +80,7 @@ Classification(is_insurance=bool, label=str, confidence=float)
 Batch classify and persist to `TransactionClassification`:
 
 - `transactions` — optional list; if `None`, loads all from DB
-- `use_llm` — run unknowns through the LLM stage
+- `use_llm` — run unknowns through the LLM stage (default: True)
 - `batch_size` — bulk insert size (default 500)
 - `overwrite` — drop and recreate classifications before running
 - `mode` — `"precision"` or `"recall"`
@@ -97,7 +97,7 @@ python -m bank_reconciliation.reconciliation.classifier [options]
 
 | Flag           | Description                                      |
 |----------------|--------------------------------------------------|
-| `--llm`        | Run unknowns through the LLM                     |
+| `--no-llm`     | Disable LLM (rules only; default: LLM enabled)   |
 | `--batch-size` | Insert batch size (default: 500)                 |
 | `--overwrite`  | Reclassify everything from scratch               |
 | `--mode`       | `precision` or `recall`                          |

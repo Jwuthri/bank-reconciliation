@@ -16,10 +16,10 @@ todos:
     status: completed
   - id: wire-up
     content: Replace DummyReconciliationEngine with real engine in dashboard.py and cli.py
-    status: in_progress
+    status: completed
   - id: smoke-test
     content: Run dashboard and CLI to verify the engine works end-to-end
-    status: pending
+    status: completed
 isProject: false
 ---
 

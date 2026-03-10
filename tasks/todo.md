@@ -57,3 +57,31 @@
 - Fee tolerance of 500 cents for payment number matcher (confidence 0.9 vs 1.0)
 - Date window defaults to 5 days, configurable per-instance
 - Payer note map is configurable; defaults cover MetLife, Guardian Life, CALIFORNIA DENTA
+
+---
+
+## improve-engine-matchers: Fix bugs, expand coverage, wire everything up
+
+- [x] Refactor `get_dashboard_payments` to use subqueries instead of loading all rows into memory
+- [x] Expand `_infer_payer_name` with HCCLAIMPMT payer code extraction (14 payer codes)
+- [x] Use `build_payer_note_map_from_db` in `engine.run_matching` (was passing `None`, falling back to hardcoded IDs)
+- [x] Expand `build_payer_note_map_from_db` `_KNOWN` map with Delta Dental + `startswith` matching
+- [x] Add duplicate `payment_number` warning in `PaymentNumberMatcher.__init__`
+- [x] Add 7 missing noise rules to classifier: BKCD PROCESSING, RETURNED DEPOSIT, CHECK, Bill.com, Cherry, Outgoing Wire Fee, REMOTE DEPOSIT
+- [x] Wire `LiveReconciliationEngine` into `dashboard.py` with startup hook (DB connect + init + run_matching)
+- [x] Wire `LiveReconciliationEngine` into `cli.py` with DB connect/init/matching before commands
+- [x] Fix `test_engine.py` MetLife `payer_id=3` hardcoding (no longer needed with `build_payer_note_map_from_db`)
+- [x] Add 15 new test cases for new classifier noise rules
+- [x] Update existing tests that expected new-rule notes to be "unknown"
+- [x] All 157 tests pass, zero lint errors
+
+### Review
+
+**Files modified:**
+- `bank_reconciliation/reconciliation/engine.py` — subquery-based pagination, expanded `_infer_payer_name`, `build_payer_note_map_from_db` usage
+- `bank_reconciliation/reconciliation/matchers.py` — expanded `_KNOWN` map, `startswith` matching, duplicate payment_number warning
+- `bank_reconciliation/reconciliation/classifier.py` — 7 new noise rules
+- `bank_reconciliation/dashboard.py` — LiveEngine + startup hook with DB init + matching
+- `bank_reconciliation/cli.py` — LiveEngine + DB init + matching before commands
+- `tests/unit/test_engine.py` — removed payer_id=3 hardcoding
+- `tests/unit/test_classifier.py` — 15 new noise rule tests, updated unknown tests

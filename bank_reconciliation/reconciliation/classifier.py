@@ -8,9 +8,8 @@ Stage 2 (LLM): Transactions that fall through all rules as "unknown" are sent
 to OpenAI gpt-5-mini in batches for a second opinion.  The LLM receives
 few-shot examples of insurance vs. non-insurance notes and returns a boolean.
 
-The LLM stage is **opt-in** — callers must pass ``use_llm=True`` to
-``classify_all``.  Without it the behaviour is identical to a pure rule-based
-classifier (unknowns default to non-insurance).
+The LLM stage runs by default for unknowns. Pass ``use_llm=False`` to
+disable (pure rule-based; unknowns default to non-insurance per mode).
 """
 
 from __future__ import annotations
@@ -234,7 +233,7 @@ async def _classify_unknowns_with_llm(
 def classify_all(
     transactions: Sequence[BankTransaction] | None = None,
     *,
-    use_llm: bool = False,
+    use_llm: bool = True,
     batch_size: int = 500,
     overwrite: bool = False,
     mode: Literal["precision", "recall"] = "precision",
@@ -249,7 +248,7 @@ def classify_all(
 
     Args:
         transactions: Optional explicit list; if *None*, queries all rows.
-        use_llm: If True, run unknown transactions through the LLM stage.
+        use_llm: If True (default), run unknown transactions through the LLM stage.
                  Requires ``openai`` package and ``OPENAI_API_KEY`` env var.
         batch_size: Insert batch size for bulk writes.
         overwrite: If True, delete all existing classifications before running.
@@ -473,9 +472,9 @@ def main() -> None:
         description="Classify bank transactions (insurance vs not) and persist to DB.",
     )
     parser.add_argument(
-        "--llm",
+        "--no-llm",
         action="store_true",
-        help="Run unknowns through the LLM stage (requires OPENAI_API_KEY).",
+        help="Disable LLM for unknowns (rules only). Default: LLM enabled.",
     )
     parser.add_argument(
         "--batch-size",
@@ -508,7 +507,7 @@ def main() -> None:
     try:
         init_db()
         counts = classify_all(
-            use_llm=args.llm,
+            use_llm=not args.no_llm,
             batch_size=args.batch_size,
             overwrite=args.overwrite,
             mode=args.mode,

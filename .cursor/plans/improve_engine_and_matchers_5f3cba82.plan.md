@@ -19,10 +19,10 @@ todos:
     status: completed
   - id: fix-tests
     content: Fix test_engine.py MetLife payer_id hardcoding, add tests for new classifier rules
-    status: in_progress
+    status: completed
   - id: run-full-suite
     content: Run full test suite and verify everything passes, then smoke-test dashboard
-    status: pending
+    status: completed
 isProject: false
 ---
 
