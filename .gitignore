@@ -53,3 +53,6 @@ Thumbs.db
 
 # Node
 node_modules/
+
+# OTHER
+transcript.md
