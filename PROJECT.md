@@ -109,6 +109,19 @@ For **unknown** transactions (no rule, no LLM), we choose how to treat them:
 
 ## Future Improvements
 
+### Production Architecture
+
+15. **Event-driven ingestion with delayed matching** — In production, don't match instantly or wait for a nightly batch. Ingest data as it arrives (bank feed via Plaid/MX every ~15 min, EOBs via 835 EDI/SFTP every few hours), then schedule a reconciliation job with a **2–4 hour delay**. This gives the counterpart record time to arrive before matching, avoiding false "missing" tasks that resolve themselves. The delay is tunable per payer.
+16. **Nightly sweep as safety net** — A nightly cron re-attempts matching on anything still unmatched (the counterpart may have arrived since the delayed job ran), generates daily summary reports, and handles edge cases like retroactive EOB corrections. This is the catch-all, not the primary matching trigger.
+17. **Multi-tenancy** — Each dental practice is a tenant. The matching engine runs per-practice with tenant isolation in the database (row-level or schema-per-tenant) and job queue. Tenant ID should be threaded through all queries and engine methods. In the current codebase, the single-DB design works for the take-home but would need partitioning or a connection-per-tenant approach in production.
+18. **Task queue infrastructure** — Replace in-process `engine.run_matching()` with a proper job queue (Celery + Redis, AWS SQS, or GCP Cloud Tasks). Each ingestion event enqueues a delayed reconciliation job. The nightly sweep is a scheduled Celery Beat task. This decouples ingestion from matching and allows horizontal scaling.
+19. **Postgres over SQLite** — SQLite is fine for the take-home but doesn't support concurrent writes, row-level locking, or multi-tenancy well. Production needs Postgres with proper indices on `(payment_number)`, `(payer_id, adjusted_amount)`, `(received_at)`, and `(bank_transaction_id)`.
+20. **Confidence-driven automation** — Auto-confirm matches above 0.95 confidence without human review. Surface matches between 0.7–0.95 for manual confirmation. Below 0.7, surface as a task. This reduces inbox noise while maintaining accuracy.
+21. **Audit trail and compliance** — Every match (auto or manual) needs a full audit log: who matched it, when, which method, what confidence, and the raw data at match time. Medical billing has compliance requirements (SOX for larger orgs). The current `ReconciliationMatch` table stores method and confidence but lacks user attribution and immutable snapshots.
+22. **Observability and alerting** — Monitor unmatched rate over time. Alert when it spikes (could mean a payer changed their 835 format, the bank feed broke, or a new payer appeared). Dashboard showing match rate trends, average time-to-match, and classifier accuracy.
+
+### Matching & Classification
+
 1. **Insurance classifier expansion** — Add more rule patterns so fewer transactions fall through to the LLM. Every new rule reduces LLM calls (cost + latency) and improves match rate.
 2. **Constraint relaxation** — Experiment with looser date window, amount tolerance, or confidence thresholds (with manual-review flags) to capture more borderline matches.
 3. **TRN payment number alignment** — Investigate why bank TRN numbers don't match EOB `payment_number`. May need data pipeline changes, format normalization, or upstream integration.
@@ -121,8 +134,19 @@ For **unknown** transactions (no rule, no LLM), we choose how to treat them:
 10. **Duplicate payment_number handling** — Warn or disambiguate when multiple EOBs share the same `payment_number`.
 11. **NON_PAYMENT EOBs** — Refine handling of zero-dollar and adjustment EOBs (GEHA, MetLife refunds).
 12. **CHECK-type matching** — Improve matching of paper-check EOBs to REMOTE DEPOSIT CAPTURE transactions.
-13. **Scheduled reconciliation** — Run matching on a schedule; configurable timeout before surfacing tasks.
-14. **Audit trail** — Log match decisions (method, confidence) for debugging and compliance.
+
+### Performance
+
+13. **Batch DB writes** — All classification and match results are inserted in batches of 500 within a single transaction, avoiding N+1 inserts.
+14. **Indexed lookups in matchers** — `PaymentNumberMatcher` builds a `dict[str, EOB]` keyed by normalized payment number (O(1) lookup). `PayerAmountDateMatcher` indexes EOBs by `(payer_id, adjusted_amount)` for O(1) candidate retrieval, then filters by date window.
+15. **Idempotent pipeline** — `classify_all` and `run_matching` skip already-processed records, so re-runs are cheap. Only new/unmatched items are processed.
+16. **LLM minimization** — Rules resolve ~87% of transactions for free. The LLM is only called for the remaining unknowns, with concurrency-limited async calls (8 concurrent). This keeps cost near-zero and latency low for the common case.
+17. **In production: horizontal scaling** — With a task queue (Celery/SQS), matching jobs can run on multiple workers in parallel, one per tenant. The matching engine is stateless — all state lives in the DB.
+
+### Generalization (Avoid Overfitting)
+
+18. **Tested against unseen data** — The provided DB has ~1 year of data; the solution will be evaluated against ~4 years. All rules, patterns, and thresholds are designed to generalize: regex patterns use broad payer-name matching (not specific IDs), date windows and amount tolerances are configurable, and the LLM fallback handles novel note formats. The `payer_registry` is a lookup table that can grow without code changes.
+19. **Historical pattern learning** — In production, analyze how specific payers transmit funds over time (typical delay between EOB date and bank deposit, common note formats, fee patterns). Use these learned patterns to set per-payer confidence adjustments and date windows rather than global defaults.
 
 ---
 
