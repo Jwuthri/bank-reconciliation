@@ -1,12 +1,20 @@
-# Bank Reconciliation — Project Summary
+# Bank Reconciliation Project Summary 🏦
 
-## What It Does
+> Match bank transactions to insurance EOBs so dental practices can reconcile payments faster, with high confidence and minimal manual work.
 
-Matches bank transactions to insurance EOBs (Explanation of Benefits) so dental practices can reconcile payments. Two-stage pipeline: (1) **classify** transactions as insurance or not, (2) **match** insurance transactions to EOBs via payment number or payer+amount+date.
+## ✨ At a Glance
+
+| Area | Summary |
+|------|---------|
+| Problem | Bank deposits and insurance EOBs arrive separately, so practices need help linking them reliably. |
+| Solution | A 2-stage pipeline: first **classify** transactions as insurance vs noise, then **match** insurance transactions to EOBs. |
+| Matching strategy | Try exact / near-exact `payment_number` matches first, then fall back to `payer + amount + date`. |
+| Product stance | Prefer **precision over recall** so the system does not create noisy false alerts for practices. |
+| Cost strategy | Use deterministic rules first and only call the LLM for unresolved edge cases. |
 
 ---
 
-## Pipeline Flow (`engine.run_matching()`)
+## 🔄 Pipeline Flow (`engine.run_matching()`)
 
 ```mermaid
 flowchart TB
@@ -64,99 +72,218 @@ flowchart TB
     MATCH --> QUERY
 ```
 
----
+### How to Read the Flow
 
-## Findings (Short)
-
-- **EOB matching accuracy is strong** — Most EOBs are matched successfully.
-- **Both match rates matter:**
-  - **EOBs → transactions**: 3,293 of 3,526 EOBs matched to a bank transaction (~93%); ~233 unmatched EOBs.
-  - **Insurance txns → EOBs**: 2,839 of 5,238 insurance transactions matched to an EOB (~54%).
-- **Main gap**: 1,677 have TRN payment numbers in notes but no EOB with that `payment_number` — bank and EOB data use different schemes or time periods. Not fixable by code.
-- **Other gaps**: 571 have payer in note but no EOB for that payer+amount; 125 fail date window; 9 have amount mismatch > $5.
-
-### Opportunities to Expand Match Rate
-
-1. **Relax constraints** — Consider loosening date window (e.g. 14 → 21 days), amount tolerance (e.g. $5 → $10), or confidence thresholds to capture more borderline matches (with manual review where needed).
-2. **Insurance classifier improvement** — Some transactions may be misclassified as NOT insurance, so they never enter the matching pipeline. Expanding rule coverage is the priority (free and fast); LLM prompts are tuned only for the remaining unknowns.
+1. **Classify** every bank transaction as insurance or not.
+2. **Match** only the insurance transactions, starting with the highest-confidence method.
+3. **Query** the results to power the dashboard and "missing" workflows.
 
 ---
 
-## Is Insurance Classification
+## 📊 Key Findings
 
-Before matching, we classify each transaction as **insurance** or **not** (noise). Only insurance transactions are matched to EOBs and surfaced as "missing EOB" tasks.
+> ✅ **EOB-side matching is strong.** Most EOBs successfully find a bank transaction.
 
-**Design goal: minimize LLM usage.** The LLM is expensive and slow relative to rules. We use it only as a second-pass fallback — the vast majority of transactions are resolved by deterministic rules alone, keeping cost near-zero and latency low.
+| Metric | Result | What it means |
+|--------|--------|---------------|
+| EOBs → bank transactions | **3,293 / 3,526 matched (~93%)** | Only ~233 EOBs remain unmatched. |
+| Insurance transactions → EOBs | **2,839 / 5,238 matched (~54%)** | Many bank-side insurance transactions still need better linkage. |
 
-1. **First pass — Rules** (fast, free): Regex patterns resolve most transactions immediately. Insurance patterns (HCCLAIMPMT, MetLife, Guardian, CALIFORNIA DENTA) and noise patterns (payroll, rent, card settlement, fees, etc.) cover the bulk of the data.
-2. **Second pass — LLM** (only for unknowns): Only transactions that no rule matched are sent to gpt-5-mini. This is a small fraction of the total volume. Use `--no-llm` to disable entirely and fall back to precision mode (default to NOT insurance).
-- **Confidence**: Rule matches = 1.0; LLM = 0.5; unresolved unknowns = 0.0. Stored in `transaction_classifications.confidence`.
+> ⚠️ **Main gap:** `1,677` transactions contain TRN payment numbers in the bank note, but no EOB exists with the same `payment_number`. This points to a data alignment issue, not just a matching-code issue.
+
+### Remaining Miss Categories
+
+| Gap | Count | Likely cause |
+|-----|-------|--------------|
+| TRN present but no matching EOB `payment_number` | `1,677` | Bank and EOB systems use different identifiers or time windows. |
+| Payer found, but no payer+amount EOB match | `571` | Missing/late EOBs or payer inference gaps. |
+| Date window miss | `125` | Deposit timing falls outside the current tolerance. |
+| Amount mismatch > $5 | `9` | Fees, formatting issues, or true mismatches. |
+
+### Best Ways to Increase Match Rate
+
+- **Relax constraints carefully**: a wider date window (for example `14 -> 21` days), larger amount tolerance (for example `$5 -> $10`), or adjusted confidence thresholds could recover borderline matches.
+- **Expand insurance rules first**: better rule coverage is the cheapest and safest way to improve recall because it keeps more valid transactions inside the matching pipeline without increasing LLM dependence.
 
 ---
 
-## Precision vs Recall — Why Precision
+## 🧠 Insurance Classification Strategy
 
-For **unknown** transactions (no rule, no LLM), we choose how to treat them:
+Before matching, each bank transaction is labeled as either **insurance** or **not insurance** (noise). Only insurance transactions move into the EOB matching pipeline and appear as potential "missing EOB" work.
 
-| Mode | Unknowns treated as | Effect |
-|------|---------------------|--------|
-| **Precision** (default) | NOT insurance | Fewer false positives; some real insurance may be missed. |
-| **Recall** | Insurance | Catch more insurance; more false positives (noise flagged as missing EOB). |
+> 💡 **Design principle:** keep classification cheap, fast, and trustworthy. Rules do the heavy lifting; the LLM only helps with edge cases.
 
-**We default to precision** because this is real money for real people. A false positive means we tell a practice "you have an insurance payment with no EOB" when it's actually payroll, rent, or a vendor — wasting their time and eroding trust. Missing a true insurance transaction is less harmful: it stays in the bank feed and can be reconciled later. Better to under-flag than over-flag.
+### Why This Step Exists
+
+- Matching every bank transaction to an EOB would create a lot of noise.
+- Many transactions are obviously **not** insurance: payroll, rent, vendor payments, card settlement, bank fees, and similar operating activity.
+- Classification acts as a gate so only likely insurance deposits flow into reconciliation.
+
+### Two-Stage Classification Pipeline
+
+| Stage | What happens | Why it matters |
+|-------|--------------|----------------|
+| **Stage 1: Rules** | Regex patterns run top-to-bottom. Insurance signals are checked first, then noise patterns. | Fast, deterministic, and covers most of the dataset. |
+| **Stage 2: LLM fallback** | Only unresolved transactions are sent to `gpt-5-mini`. | Preserves recall for edge cases without paying LLM cost on common traffic. |
+
+### What the Rules Look For
+
+- **Insurance-positive patterns**: `HCCLAIMPMT`, `MetLife`, `Guardian`, `CALIFORNIA DENTA`, and similar payer-specific note formats.
+- **Noise / non-insurance patterns**: payroll, rent, card settlement, service charges, vendor tools, and other routine business activity.
+- **First match wins**: once a rule matches, the transaction is labeled immediately and never goes to the LLM.
+
+### LLM Fallback Behavior
+
+- Runs only for transactions that stay unknown after rules.
+- Can be disabled with `--no-llm`.
+- When disabled, the system falls back to mode-based handling for unknowns rather than forcing an expensive API call.
+
+### Classification Confidence and Labels
+
+| Outcome | Typical label | Confidence |
+|---------|---------------|------------|
+| Rule-matched insurance | `HCCLAIMPMT`, `MetLife`, `Guardian`, etc. | `1.0` |
+| Rule-matched noise | `payroll`, `rent`, `card_settlement`, etc. | `1.0` |
+| LLM says insurance | `llm_insurance` | `0.5` |
+| LLM says not insurance | `llm_not_insurance` | `0.5` |
+| Still unknown | `unknown` | `0.0` |
+
+All confidence values are stored in `transaction_classifications.confidence`.
 
 ---
 
-## Future Improvements
+## 🔗 Reconciliation / Matching Strategy
+
+Once a transaction is classified as insurance, the reconciliation engine tries to pair it with the correct EOB. The matchers run **in sequence**, from most reliable to more flexible, so the system captures the easy wins first and only uses fuzzy logic on the leftovers.
+
+### Matcher Overview
+
+| Matcher | Looks at | Confidence | Best for |
+|---------|----------|------------|----------|
+| **PaymentNumberMatcher** | `TRN` payment number + amount | `1.0` or `0.9` | HCCLAIMPMT-style notes with a direct payment reference |
+| **PayerAmountDateMatcher** | payer name + amount + date window | `0.85` or `0.7` | Payers like MetLife, Guardian, and California Dental when there is no direct payment number |
+
+### 1. PaymentNumberMatcher
+
+This is the **high-confidence matcher**.
+
+- It extracts the payment number from note text such as `TRN*1*<NUM>*...`.
+- It looks up the EOB with that exact `payment_number`.
+- It verifies the amount against `eob.adjusted_amount`.
+
+Confidence rules:
+
+- **`1.0`** when the bank amount matches the EOB amount exactly.
+- **`0.9`** when the amount is within a small fee tolerance (`$5`).
+- **No match** when the amount is too far off.
+
+This matcher is strong because the TRN value is effectively a direct reference from the payment rail.
+
+### 2. PayerAmountDateMatcher
+
+This is the **fallback matcher** for insurance transactions that do not contain a usable TRN payment number.
+
+- It infers the payer from the bank note using a configurable `payer_note_map`.
+- It finds EOB candidates with the same payer and adjusted amount.
+- It filters those candidates to a date window around the bank `received_at` date.
+- If multiple candidates remain, it chooses the closest one in time.
+
+Confidence rules:
+
+- **`0.85`** when there is a unique candidate in the date window.
+- **`0.7`** when multiple candidates exist and the best one is chosen heuristically.
+
+This matcher is less precise because it relies on indirect signals rather than a direct payment identifier.
+
+### Why the Ordering Matters
+
+- The first matcher captures the clean, highly reliable cases.
+- The second matcher only works on unmatched leftovers, which prevents duplicate matching and reduces ambiguity.
+- Both matchers receive `already_matched_eob_ids` and `already_matched_txn_ids`, so each EOB and bank transaction is matched at most once.
+
+### Match Output
+
+Each successful reconciliation produces a record in `reconciliation_matches` with:
+
+- `eob_id`
+- `bank_transaction_id`
+- `confidence`
+- `match_method`
+
+That stored output powers the dashboard, matched views, and the "missing bank transaction" / "missing EOB" workflows.
+
+---
+
+## ⚖️ Precision vs Recall
+
+For transactions that remain **unknown** after rules and optional LLM classification, the system must choose whether to treat them as insurance or noise.
+
+| Mode | Unknowns treated as | Practical effect |
+|------|---------------------|------------------|
+| **Precision** (default) | NOT insurance | Fewer false positives, but some real insurance may be missed. |
+| **Recall** | Insurance | More true insurance found, but more noise is surfaced as fake "missing EOB" work. |
+
+> 🎯 **Why precision wins here:** this workflow affects real money and real office operations. A false positive wastes staff time and reduces trust. A false negative is less damaging because the transaction still exists in the bank feed and can be reconciled later.
+
+---
+
+## 🚀 Future Improvements
 
 ### Production Architecture
 
-15. **Event-driven ingestion with delayed matching** — In production, don't match instantly or wait for a nightly batch. Ingest data as it arrives (bank feed via Plaid/MX every ~15 min, EOBs via 835 EDI/SFTP every few hours), then schedule a reconciliation job with a **2–4 hour delay**. This gives the counterpart record time to arrive before matching, avoiding false "missing" tasks that resolve themselves. The delay is tunable per payer.
-16. **Nightly sweep as safety net** — A nightly cron re-attempts matching on anything still unmatched (the counterpart may have arrived since the delayed job ran), generates daily summary reports, and handles edge cases like retroactive EOB corrections. This is the catch-all, not the primary matching trigger.
-17. **Multi-tenancy** — Each dental practice is a tenant. The matching engine runs per-practice with tenant isolation in the database (row-level or schema-per-tenant) and job queue. Tenant ID should be threaded through all queries and engine methods. In the current codebase, the single-DB design works for the take-home but would need partitioning or a connection-per-tenant approach in production.
-18. **Task queue infrastructure** — Replace in-process `engine.run_matching()` with a proper job queue (Celery + Redis, AWS SQS, or GCP Cloud Tasks). Each ingestion event enqueues a delayed reconciliation job. The nightly sweep is a scheduled Celery Beat task. This decouples ingestion from matching and allows horizontal scaling.
-19. **Postgres over SQLite** — SQLite is fine for the take-home but doesn't support concurrent writes, row-level locking, or multi-tenancy well. Production needs Postgres with proper indices on `(payment_number)`, `(payer_id, adjusted_amount)`, `(received_at)`, and `(bank_transaction_id)`.
-20. **Confidence-driven automation** — Auto-confirm matches above 0.95 confidence without human review. Surface matches between 0.7–0.95 for manual confirmation. Below 0.7, surface as a task. This reduces inbox noise while maintaining accuracy.
-21. **Audit trail and compliance** — Every match (auto or manual) needs a full audit log: who matched it, when, which method, what confidence, and the raw data at match time. Medical billing has compliance requirements (SOX for larger orgs). The current `ReconciliationMatch` table stores method and confidence but lacks user attribution and immutable snapshots.
-22. **Observability and alerting** — Monitor unmatched rate over time. Alert when it spikes (could mean a payer changed their 835 format, the bank feed broke, or a new payer appeared). Dashboard showing match rate trends, average time-to-match, and classifier accuracy.
+- **Event-driven ingestion with delayed matching**: ingest data as it arrives, then run reconciliation after a configurable `2-4 hour` delay so the counterpart record has time to land.
+- **Nightly sweep as a safety net**: retry anything still unmatched, catch late-arriving records, and generate daily summaries.
+- **Multi-tenancy**: run the engine per practice with tenant-aware isolation in the DB and job queue.
+- **Real task queue**: replace in-process `engine.run_matching()` with Celery + Redis, AWS SQS, or Cloud Tasks.
+- **Postgres over SQLite**: needed for concurrency, row-level locking, indexing, and safer production scaling.
+- **Confidence-driven automation**: auto-confirm very high-confidence matches and route medium-confidence cases for review.
+- **Audit trail and compliance**: store who matched what, when, why, and with what raw data snapshot.
+- **Observability and alerting**: track unmatched-rate spikes, match latency, and classifier drift over time.
 
-### Matching & Classification
+### Matching and Classification
 
-1. **Insurance classifier expansion** — Add more rule patterns so fewer transactions fall through to the LLM. Every new rule reduces LLM calls (cost + latency) and improves match rate.
-2. **Constraint relaxation** — Experiment with looser date window, amount tolerance, or confidence thresholds (with manual-review flags) to capture more borderline matches.
-3. **TRN payment number alignment** — Investigate why bank TRN numbers don't match EOB `payment_number`. May need data pipeline changes, format normalization, or upstream integration.
-4. **LLM tuning** — For the remaining unknowns that still require LLM, tune prompts and evaluate cost vs accuracy. Goal: keep LLM usage as small as possible.
-5. **More payer patterns** — Add Beam, GEHA, Humana, UMR, etc. to `payer_note_map` as patterns are discovered.
-6. **HCCLAIMPMT payer code mapping** — Use clearinghouse codes (UHCDComm, PAY PLUS, DELTADENTALCA) to infer payer for amount+date matching when TRN fails.
-7. **Adaptive date window** — Use payer-specific windows (e.g. MetLife vs ACH) based on historical settlement patterns.
-8. **Confidence thresholds** — Surface only matches above a threshold (e.g. 0.85) as auto-reconciled; lower-confidence for manual review.
-9. **Amount-only with strong date** — For single EOB with same amount and very close date (e.g. 1–2 days), consider low-confidence match with explicit review flag.
-10. **Duplicate payment_number handling** — Warn or disambiguate when multiple EOBs share the same `payment_number`.
-11. **NON_PAYMENT EOBs** — Refine handling of zero-dollar and adjustment EOBs (GEHA, MetLife refunds).
-12. **CHECK-type matching** — Improve matching of paper-check EOBs to REMOTE DEPOSIT CAPTURE transactions.
+- **Expand the insurance classifier** so fewer valid transactions fall through the cracks.
+- **Relax constraints selectively** with manual review where needed.
+- **Fix TRN alignment issues** between bank note identifiers and EOB `payment_number`.
+- **Tune the LLM fallback** for the remaining ambiguous cases while keeping usage minimal.
+- **Add more payer patterns** such as Beam, GEHA, Humana, and UMR.
+- **Use HCCLAIMPMT payer codes** to infer payer when TRN lookup fails.
+- **Adopt payer-specific date windows** instead of one global value.
+- **Use confidence thresholds** to separate auto-reconciled vs manual-review matches.
+- **Consider amount-only matching with tight date bounds** as a low-confidence review path.
+- **Handle duplicate `payment_number` values** more explicitly.
+- **Refine `NON_PAYMENT` handling** for zero-dollar and adjustment-style EOBs.
+- **Improve paper-check matching** for `REMOTE DEPOSIT CAPTURE` flows.
 
-### Performance
+### Performance and Scaling
 
-13. **Batch DB writes** — All classification and match results are inserted in batches of 500 within a single transaction, avoiding N+1 inserts.
-14. **Indexed lookups in matchers** — `PaymentNumberMatcher` builds a `dict[str, EOB]` keyed by normalized payment number (O(1) lookup). `PayerAmountDateMatcher` indexes EOBs by `(payer_id, adjusted_amount)` for O(1) candidate retrieval, then filters by date window.
-15. **Idempotent pipeline** — `classify_all` and `run_matching` skip already-processed records, so re-runs are cheap. Only new/unmatched items are processed.
-16. **LLM minimization** — Rules resolve ~87% of transactions for free. The LLM is only called for the remaining unknowns, with concurrency-limited async calls (8 concurrent). This keeps cost near-zero and latency low for the common case.
-17. **In production: horizontal scaling** — With a task queue (Celery/SQS), matching jobs can run on multiple workers in parallel, one per tenant. The matching engine is stateless — all state lives in the DB.
+- **Batch DB writes** in groups of `500` to avoid N+1 insert behavior.
+- **Use indexed matcher lookups** with in-memory maps keyed by payment number and `(payer_id, adjusted_amount)`.
+- **Keep the pipeline idempotent** so reruns only process new or still-unmatched records.
+- **Minimize LLM calls**: rules already resolve about `87%` of transactions for free.
+- **Scale horizontally in production** because the engine itself is stateless and DB-backed.
 
-### Generalization (Avoid Overfitting)
+### Generalization
 
-18. **Tested against unseen data** — The provided DB has ~1 year of data; the solution will be evaluated against ~4 years. All rules, patterns, and thresholds are designed to generalize: regex patterns use broad payer-name matching (not specific IDs), date windows and amount tolerances are configurable, and the LLM fallback handles novel note formats. The `payer_registry` is a lookup table that can grow without code changes.
-19. **Historical pattern learning** — In production, analyze how specific payers transmit funds over time (typical delay between EOB date and bank deposit, common note formats, fee patterns). Use these learned patterns to set per-payer confidence adjustments and date windows rather than global defaults.
+- **Avoid overfitting to the sample DB**: the current data covers about `1 year`, while evaluation spans roughly `4 years`.
+- **Use broad, configurable matching rules** rather than brittle dataset-specific assumptions.
+- **Learn payer-specific historical behavior** over time to tune delay windows, confidence, and pattern handling.
 
 ---
 
-## Demo Video
+## 🎥 Demo Video
 
-A 77-second walkthrough video covers the full system: the problem space, two-stage pipeline architecture, both matcher deep dives (PaymentNumberMatcher and PayerAmountDateMatcher), a live dashboard recording, and results.
+A `77-second` walkthrough covers:
 
-**Where to find it:** `video/out/demo.mp4`
+- The problem space
+- The 2-stage pipeline
+- Both matcher deep dives (`PaymentNumberMatcher` and `PayerAmountDateMatcher`)
+- A live dashboard recording
+- Final results
 
-To re-render or preview interactively:
+**Video path:** `video/out/demo.mp4`
+
+To preview or re-render:
 
 ```bash
 cd video
