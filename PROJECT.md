@@ -12,19 +12,19 @@ Matches bank transactions to insurance EOBs (Explanation of Benefits) so dental 
 flowchart TB
     subgraph CLASSIFY["1. CLASSIFY (classify_all)"]
         direction TB
-        C1[Rules first]
+        C1["Pass 1: Rules (fast, free)"]
         C2[Insurance: HCCLAIMPMT, MetLife, CALIFORNIA DENTA, Guardian]
         C3[Noise: PAYROLL, rent, BNKCD, Simplifeye, etc.]
         C4{Unknown?}
         C5[Precision: default to NOT insurance]
-        C6[use_llm: send to LLM]
+        C6["Pass 2: LLM (only unknowns, minimized for cost/speed)"]
         C7[(transaction_classifications)]
         C1 --> C2
         C1 --> C3
         C2 -->|Matched| C7
         C3 -->|Matched| C7
         C1 --> C4
-        C4 -->|Precision mode| C5
+        C4 -->|no-llm / Precision mode| C5
         C4 -->|use_llm=True| C6
         C5 --> C7
         C6 --> C7
@@ -78,7 +78,7 @@ flowchart TB
 ### Opportunities to Expand Match Rate
 
 1. **Relax constraints** — Consider loosening date window (e.g. 14 → 21 days), amount tolerance (e.g. $5 → $10), or confidence thresholds to capture more borderline matches (with manual review where needed).
-2. **Insurance classifier improvement** — Some transactions may be misclassified as NOT insurance, so they never enter the matching pipeline. Improving rule coverage and LLM prompts could surface more insurance transactions and increase the match rate.
+2. **Insurance classifier improvement** — Some transactions may be misclassified as NOT insurance, so they never enter the matching pipeline. Expanding rule coverage is the priority (free and fast); LLM prompts are tuned only for the remaining unknowns.
 
 ---
 
@@ -86,9 +86,11 @@ flowchart TB
 
 Before matching, we classify each transaction as **insurance** or **not** (noise). Only insurance transactions are matched to EOBs and surfaced as "missing EOB" tasks.
 
-- **Rule-based**: Regex patterns for HCCLAIMPMT, MetLife, Guardian, CALIFORNIA DENTA (insurance) vs payroll, rent, card settlement, fees, etc. (noise).
-- **LLM fallback** (default): Unknowns sent to gpt-5-mini for a second opinion. Use `--no-llm` to disable.
-- **Confidence**: Rule matches = 1.0; unknowns = 0.0; LLM = 0.5. Stored in `transaction_classifications.confidence`.
+**Design goal: minimize LLM usage.** The LLM is expensive and slow relative to rules. We use it only as a second-pass fallback — the vast majority of transactions are resolved by deterministic rules alone, keeping cost near-zero and latency low.
+
+1. **First pass — Rules** (fast, free): Regex patterns resolve most transactions immediately. Insurance patterns (HCCLAIMPMT, MetLife, Guardian, CALIFORNIA DENTA) and noise patterns (payroll, rent, card settlement, fees, etc.) cover the bulk of the data.
+2. **Second pass — LLM** (only for unknowns): Only transactions that no rule matched are sent to gpt-5-mini. This is a small fraction of the total volume. Use `--no-llm` to disable entirely and fall back to precision mode (default to NOT insurance).
+- **Confidence**: Rule matches = 1.0; LLM = 0.5; unresolved unknowns = 0.0. Stored in `transaction_classifications.confidence`.
 
 ---
 
@@ -107,10 +109,10 @@ For **unknown** transactions (no rule, no LLM), we choose how to treat them:
 
 ## Future Improvements
 
-1. **Insurance classifier expansion** — Improve rule coverage and LLM prompts so fewer true insurance transactions are classified as NOT insurance; this directly expands the match rate.
+1. **Insurance classifier expansion** — Add more rule patterns so fewer transactions fall through to the LLM. Every new rule reduces LLM calls (cost + latency) and improves match rate.
 2. **Constraint relaxation** — Experiment with looser date window, amount tolerance, or confidence thresholds (with manual-review flags) to capture more borderline matches.
 3. **TRN payment number alignment** — Investigate why bank TRN numbers don't match EOB `payment_number`. May need data pipeline changes, format normalization, or upstream integration.
-4. **LLM tuning** — LLM is default for unknowns; tune prompts and evaluate cost vs accuracy.
+4. **LLM tuning** — For the remaining unknowns that still require LLM, tune prompts and evaluate cost vs accuracy. Goal: keep LLM usage as small as possible.
 5. **More payer patterns** — Add Beam, GEHA, Humana, UMR, etc. to `payer_note_map` as patterns are discovered.
 6. **HCCLAIMPMT payer code mapping** — Use clearinghouse codes (UHCDComm, PAY PLUS, DELTADENTALCA) to infer payer for amount+date matching when TRN fails.
 7. **Adaptive date window** — Use payer-specific windows (e.g. MetLife vs ACH) based on historical settlement patterns.
@@ -121,3 +123,21 @@ For **unknown** transactions (no rule, no LLM), we choose how to treat them:
 12. **CHECK-type matching** — Improve matching of paper-check EOBs to REMOTE DEPOSIT CAPTURE transactions.
 13. **Scheduled reconciliation** — Run matching on a schedule; configurable timeout before surfacing tasks.
 14. **Audit trail** — Log match decisions (method, confidence) for debugging and compliance.
+
+---
+
+## Demo Video
+
+A 77-second walkthrough video covers the full system: the problem space, two-stage pipeline architecture, both matcher deep dives (PaymentNumberMatcher and PayerAmountDateMatcher), a live dashboard recording, and results.
+
+**Where to find it:** `video/out/demo.mp4`
+
+To re-render or preview interactively:
+
+```bash
+cd video
+npm install              # first time only
+npm run studio           # opens Remotion Studio at http://localhost:3000
+npm run render           # renders to video/out/demo.mp4
+npm run capture          # re-records the live dashboard (requires dashboard running at localhost:8000)
+```

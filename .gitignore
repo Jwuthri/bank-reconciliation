@@ -18,7 +18,7 @@ eggs/
 *.spec
 
 # Database
-*.db
+# *.db
 *.sqlite
 *.sqlite3
 
@@ -50,3 +50,6 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Node
+node_modules/
